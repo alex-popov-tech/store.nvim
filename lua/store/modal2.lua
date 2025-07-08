@@ -132,9 +132,15 @@ function M.new(config)
   local modal_keymaps = {
     [config.keybindings.close] = function()
       instance:close()
+      if config.on_close then
+        config.on_close()
+      end
     end,
     ["<esc>"] = function()
       instance:close()
+      if config.on_close then
+        config.on_close()
+      end
     end,
     [config.keybindings.switch_focus] = function()
       if instance.state.current_focus == "list" then

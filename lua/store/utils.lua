@@ -4,28 +4,32 @@ local M = {}
 ---@param width number Total width of the line
 ---@param left string|nil Left-aligned content
 ---@param right string|nil Right-aligned content
----@return string Formatted line with proper spacing
+---@return string Formatted line with proper spacing and 1 column right padding
 function M.format_line(width, left, right)
   left = left or ""
   right = right or ""
 
+  -- Reserve 1 column for right padding
+  local right_padding = 1
+  local usable_width = width - right_padding
+
   -- If both left and right content fit with at least 1 space between
   local min_spacing = 1
-  local available_space = width - #left - #right - min_spacing
+  local available_space = usable_width - #left - #right - min_spacing
 
   if available_space >= 0 then
     -- Normal case: both fit with proper spacing
     local spacing = min_spacing + available_space
-    return left .. string.rep(" ", spacing) .. right
+    return left .. string.rep(" ", spacing) .. right .. string.rep(" ", right_padding)
   else
     -- Content is too long for the width, truncate right content
-    local max_right_length = width - #left - min_spacing
+    local max_right_length = usable_width - #left - min_spacing
     if max_right_length > 0 then
       local truncated_right = string.sub(right, 1, max_right_length - 3) .. "..."
-      return left .. string.rep(" ", min_spacing) .. truncated_right
+      return left .. string.rep(" ", min_spacing) .. truncated_right .. string.rep(" ", right_padding)
     else
       -- Even left content is too long, just return left content truncated
-      return string.sub(left, 1, width)
+      return string.sub(left, 1, usable_width) .. string.rep(" ", right_padding)
     end
   end
 end

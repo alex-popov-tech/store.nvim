@@ -19,13 +19,6 @@ M.close = function()
   return false
 end
 
-M.toggle = function()
-  if current_modal then
-    return M.close()
-  else
-    return M.open()
-  end
-end
 
 -- Main function to open modal using new modal2 architecture
 M.open = function()
@@ -36,7 +29,14 @@ M.open = function()
 
   config.get().log.debug("Opening store modal")
 
-  local modal = Modal2.new(config.get())
+  local modal_config = config.get()
+  modal_config.on_close = function()
+    -- Clear current_modal reference when modal is closed via keybinding
+    config.get().log.debug("Modal closed via keybinding, clearing reference")
+    current_modal = nil
+  end
+
+  local modal = Modal2.new(modal_config)
   local success = modal:open()
   if success then
     current_modal = modal
