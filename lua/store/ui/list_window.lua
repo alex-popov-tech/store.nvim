@@ -350,15 +350,15 @@ function ListWindow:render(state)
 
     -- Always show stars (or 0 if missing)
     local stars = repo.stargazers_count or 0
-    table.insert(metadata_parts, "⭐" .. stars)
+    table.insert(metadata_parts, "⭐" .. utils.format_number(stars))
 
     -- Always show forks (or 0 if missing)
     local forks = repo.fork_count or 0
-    table.insert(metadata_parts, "🍴" .. forks)
+    table.insert(metadata_parts, "🍴" .. utils.format_number(forks))
 
     -- Always show watchers (or 0 if missing)
     local watchers = repo.watchers_count or 0
-    table.insert(metadata_parts, "👀" .. watchers)
+    table.insert(metadata_parts, "👀" .. utils.format_number(watchers))
 
     local metadata = table.concat(metadata_parts, " ")
     local full_name = repo.full_name or repo.html_url

@@ -84,6 +84,28 @@ function M.format_line_priority_right(width, left, right)
   end
 end
 
+---Format a number with appropriate suffix (1.2k, 3.4M) with 1 decimal precision
+---@param num number Number to format
+---@return string Formatted number with suffix
+function M.format_number(num)
+  if type(num) ~= "number" then
+    return "0"
+  end
+  
+  if num < 1000 then
+    return tostring(num)
+  elseif num < 1000000 then
+    local formatted = num / 1000
+    return string.format("%.1fk", formatted)
+  elseif num < 1000000000 then
+    local formatted = num / 1000000
+    return string.format("%.1fM", formatted)
+  else
+    local formatted = num / 1000000000
+    return string.format("%.1fB", formatted)
+  end
+end
+
 ---Open a URL in the default browser (cross-platform)
 ---@param url string URL to open
 ---@return boolean Success status
