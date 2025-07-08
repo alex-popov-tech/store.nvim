@@ -1,7 +1,7 @@
 local Path = require("plenary.path")
-local log = require('plenary.log').new({
-  plugin = 'store.nvim',
-  level = 'debug',
+local log = require("plenary.log").new({
+  plugin = "store.nvim",
+  level = "debug",
   use_console = false,
 })
 
@@ -261,4 +261,3 @@ function M.list_plugins()
 end
 
 return M
-

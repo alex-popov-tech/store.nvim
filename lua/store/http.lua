@@ -1,5 +1,6 @@
 local curl = require("plenary.curl")
 local cache = require("store.cache")
+local config = require("store.config")
 
 ---@class Repository
 ---@field full_name string Repository full name (owner/repo)
@@ -71,8 +72,6 @@ local function strip_html_tags(content)
   return content
 end
 
-M.gist_url =
-  "https://gist.githubusercontent.com/alex-popov-tech/93dcd3ce38cbc7a0b3245b9b59b56c9b/raw/store.nvim-repos.json"
 
 ---Fetch plugins from the gist URL, with caching support
 ---@param callback fun(data: PluginsData|nil, error: string|nil) Callback function with plugins data or error
@@ -85,7 +84,8 @@ function M.fetch_plugins(callback)
   end
 
   -- Fallback to network request
-  curl.get(M.gist_url, {
+  local data_source_url = config.get().data_source_url
+  curl.get(data_source_url, {
     headers = {
       ["Accept"] = "application/json",
       ["User-Agent"] = "store.nvim/1.0.0",

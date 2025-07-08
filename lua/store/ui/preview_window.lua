@@ -105,6 +105,8 @@ function M.new(preview_config)
     win_id = nil,
     buf_id = nil,
     is_open = false,
+    cursor_positions = {}, -- Map of README identifier -> cursor position
+    current_readme_id = nil, -- Track current README being displayed
   }
 
   setmetatable(instance, PreviewWindow)
@@ -210,9 +212,49 @@ function PreviewWindow:open()
   return true
 end
 
+---Save current cursor position for the current README
+---@return nil
+function PreviewWindow:_save_cursor_position()
+  if not self.current_readme_id or not self.win_id then
+    return
+  end
+
+  local readme_id = self.current_readme_id
+  local win_id = self.win_id
+  vim.schedule(function()
+    pcall(function()
+      local cursor = vim.api.nvim_win_get_cursor(win_id)
+      self.cursor_positions[readme_id] = { cursor[1], cursor[2] }
+    end)
+  end)
+end
+
+---Restore cursor position for a specific README
+---@param readme_id string README identifier
+---@return nil
+function PreviewWindow:_restore_cursor_position(readme_id)
+  if not readme_id or not self.win_id or not vim.api.nvim_win_is_valid(self.win_id) then
+    return
+  end
+
+  local saved_position = self.cursor_positions[readme_id]
+  if saved_position then
+    -- Validate that the saved position is within bounds
+    local line_count = vim.api.nvim_buf_line_count(self.buf_id)
+    local line = math.min(saved_position[1], line_count)
+    local col = saved_position[2]
+
+    vim.api.nvim_win_set_cursor(self.win_id, { line, col })
+  else
+    -- First time viewing this README, set cursor to top
+    vim.api.nvim_win_set_cursor(self.win_id, { 1, 0 })
+  end
+end
+
 ---Render markdown content in the preview window
 ---@param content table Array of markdown lines
-function PreviewWindow:render(content)
+---@param readme_id string|nil Optional README identifier for cursor position tracking
+function PreviewWindow:render(content, readme_id)
   if type(content) ~= "table" or type(content[1]) ~= "string" then
     error("render() requires content to be a table of rows, got: " .. type(content))
   end
@@ -223,6 +265,9 @@ function PreviewWindow:render(content)
     error("buf_id is nil or invalid")
   end
 
+  -- Save cursor position for current README before switching
+  self:_save_cursor_position()
+
   vim.schedule(function()
     vim.api.nvim_set_option_value("modifiable", true, { buf = self.buf_id })
     vim.api.nvim_buf_set_lines(self.buf_id, 0, -1, false, content)
@@ -231,6 +276,12 @@ function PreviewWindow:render(content)
       error("markview.render is not available - check markview plugin version")
     end
     self.markview.render(self.buf_id, { enable = true, hybrid_mode = false }, nil)
+
+    -- Update current README ID and restore cursor position
+    self.current_readme_id = readme_id
+    if readme_id then
+      self:_restore_cursor_position(readme_id)
+    end
   end)
 end
 
@@ -253,6 +304,12 @@ function PreviewWindow:focus()
 
   vim.api.nvim_set_current_win(self.win_id)
   return true
+end
+
+---Save cursor position when losing focus (called externally)
+---@return nil
+function PreviewWindow:save_cursor_on_blur()
+  self:_save_cursor_position()
 end
 
 ---Close the preview window

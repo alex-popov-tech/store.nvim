@@ -1,19 +1,16 @@
 local http = require("store.http")
 local validators = require("store.validators")
+local utils = require("store.utils")
 local heading_window = require("store.ui.heading_window")
 local list_window = require("store.ui.list_window")
 local preview_window = require("store.ui.preview_window")
 
 local M = {}
 
--- Default modal configuration
-local DEFAULT_CONFIG = {
-  width = 0.6, -- Percentage of screen width
-  height = 0.8, -- Percentage of screen height
-  proportions = {
-    list = 0.3, -- 30% for list window
-    preview = 0.7, -- 70% for preview window
-  },
+-- Internal UI configuration (zindex, border, etc.)
+local UI_CONFIG = {
+  border = "rounded",
+  zindex = 50,
 }
 
 -- Validate modal configuration
@@ -62,74 +59,10 @@ local function validate(config)
       end
     end
 
-    -- Validate proportions sum to 1
-    local list_prop = config.proportions.list or DEFAULT_CONFIG.proportions.list
-    local preview_prop = config.proportions.preview or DEFAULT_CONFIG.proportions.preview
-    if math.abs((list_prop + preview_prop) - 1.0) > 0.001 then
-      return "modal.proportions.list + modal.proportions.preview must equal 1.0"
-    end
+    -- Note: proportions validation is handled in config.lua
   end
 
   return nil
-end
-
--- Calculate window dimensions and positions for 3-window layout
----@param config table Modal configuration
----@return table Layout calculations
-local function calculate_layout(config)
-  local screen_width = vim.o.columns
-  local screen_height = vim.o.lines
-
-  -- Convert percentages to absolute values
-  local total_width = math.floor(screen_width * config.width)
-  local total_height = math.floor(screen_height * config.height)
-
-  -- Calculate positioning to center the modal
-  local start_row = math.floor((screen_height - total_height) / 2)
-  local start_col = math.floor((screen_width - total_width) / 2)
-
-  -- Layout dimensions
-  local header_height = 6
-  local gap_between_windows = 2
-  local content_height = total_height - header_height - gap_between_windows
-
-  -- Window splits using proportions
-  local list_width = math.floor(total_width * config.proportions.list)
-  -- Subtract gap to align with header
-  local preview_width = math.floor(total_width * config.proportions.preview) - 2
-
-  return {
-    total_width = total_width,
-    total_height = total_height,
-    start_row = start_row,
-    start_col = start_col,
-    header_height = header_height,
-    gap_between_windows = gap_between_windows,
-
-    -- Header window (full width at top)
-    header = {
-      width = total_width,
-      height = header_height,
-      row = start_row,
-      col = start_col,
-    },
-
-    -- List window (left side, below header)
-    list = {
-      width = list_width,
-      height = content_height,
-      row = start_row + header_height + gap_between_windows,
-      col = start_col,
-    },
-
-    -- Preview window (right side, below header)
-    preview = {
-      width = preview_width,
-      height = content_height,
-      row = start_row + header_height + gap_between_windows,
-      col = start_col + list_width + 3, -- +3 for prettier gap
-    },
-  }
 end
 
 -- Modal2 class - stateful orchestrator for UI components
@@ -137,76 +70,135 @@ local Modal2 = {}
 Modal2.__index = Modal2
 
 ---Create a new modal instance
----@param config table|nil Modal configuration with width/height/proportions
+---@param config table Modal configuration with width/height/proportions (from config.lua)
 ---@return table Modal2 instance
 function M.new(config)
+  if not config then
+    error("Configuration required. Modal2 expects config from config.lua")
+  end
+
   -- Validate configuration first
   local error_msg = validate(config)
   if error_msg then
     error("Modal configuration validation failed: " .. error_msg)
   end
 
-  -- Merge with defaults
-  local merged_config = vim.tbl_deep_extend("force", DEFAULT_CONFIG, config or {})
-
-  -- Calculate layout with final config
-  local layout = calculate_layout(merged_config)
-
-  -- Initialize list component with calculated layout
+  -- Initialize list component with calculated config.computed_layout
   local instance = {
-    config = merged_config,
-    layout = layout,
+    config = config,
+    layout = config.computed_layout,
     is_open = false,
     state = {
       filter_query = "",
       repos = {},
       filtered_repos = {},
       current_focus = "list", -- Track current focused component: "list" or "preview"
+      current_repository = nil, -- Track currently selected repository
     },
 
     -- UI component instances (ready for rendering)
     heading = heading_window.new({
-      width = layout.header.width,
-      height = layout.header.height,
-      row = layout.header.row,
-      col = layout.header.col,
-      border = "rounded",
-      zindex = 50,
+      width = config.computed_layout.header.width,
+      height = config.computed_layout.header.height,
+      row = config.computed_layout.header.row,
+      col = config.computed_layout.header.col,
+      border = UI_CONFIG.border,
+      zindex = UI_CONFIG.zindex,
     }),
 
     preview = preview_window.new({
-      width = layout.preview.width,
-      height = layout.preview.height,
-      row = layout.preview.row,
-      col = layout.preview.col,
-      border = "rounded",
-      zindex = 50,
+      width = config.computed_layout.preview.width,
+      height = config.computed_layout.preview.height,
+      row = config.computed_layout.preview.row,
+      col = config.computed_layout.preview.col,
+      border = UI_CONFIG.border,
+      zindex = UI_CONFIG.zindex,
       keymap = {}, -- Will be populated below
     }),
 
     list = list_window.new({
-      width = layout.list.width,
-      height = layout.list.height,
-      row = layout.list.row,
-      col = layout.list.col,
-      border = "rounded",
-      zindex = 50,
+      width = config.computed_layout.list.width,
+      height = config.computed_layout.list.height,
+      row = config.computed_layout.list.row,
+      col = config.computed_layout.list.col,
+      border = UI_CONFIG.border,
+      zindex = UI_CONFIG.zindex,
       keymap = {}, -- Will be populated below
+      cursor_debounce_delay = config.preview_debounce,
     }),
   }
 
   -- Create modal keymaps with access to instance
   local modal_keymaps = {
-    ["q"] = function()
+    [config.keybindings.close] = function()
       instance:close()
     end,
-    ["<Tab>"] = function()
+    ["<esc>"] = function()
+      instance:close()
+    end,
+    [config.keybindings.switch_focus] = function()
       if instance.state.current_focus == "list" then
         instance.preview:focus()
         instance.state.current_focus = "preview"
       else
+        -- Save cursor position when switching away from preview
+        instance.preview:save_cursor_on_blur()
         instance.list:focus()
         instance.state.current_focus = "list"
+      end
+    end,
+    [config.keybindings.filter] = function()
+      vim.ui.input({ prompt = "Filter repositories: ", default = instance.state.filter_query }, function(input)
+        if input ~= nil then
+          -- Update filter query in state
+          instance.state.filter_query = input
+
+          -- Filter repositories based on query (case-insensitive)
+          if input == "" then
+            instance.state.filtered_repos = instance.state.repos
+          else
+            local query_lower = input:lower()
+            instance.state.filtered_repos = {}
+            for _, repo in ipairs(instance.state.repos) do
+              if
+                repo.full_name:lower():find(query_lower)
+                or (repo.description and repo.description:lower():find(query_lower))
+              then
+                table.insert(instance.state.filtered_repos, repo)
+              end
+            end
+          end
+
+          -- Update heading with new filter stats
+          instance.heading:render({
+            query = instance.state.filter_query,
+            state = "ready",
+            filtered_count = #instance.state.filtered_repos,
+            total_count = #instance.state.repos,
+          })
+
+          -- Re-render list with filtered results
+          instance.list:render({
+            state = "ready",
+            repositories = instance.state.filtered_repos,
+          })
+        end
+      end)
+    end,
+    [config.keybindings.help] = function()
+      local help_modal = require("store.ui.help_modal")
+      help_modal.open()
+    end,
+    [config.keybindings.open] = function()
+      if instance.state.current_repository and instance.state.current_repository.html_url then
+        local success = utils.open_url(instance.state.current_repository.html_url)
+        if not success then
+          config.log.error("Failed to open URL: " .. instance.state.current_repository.html_url)
+        else
+          config.log.debug("Opened repository URL: " .. instance.state.current_repository.html_url)
+        end
+      else
+        config.log.warn("No repository selected")
       end
     end,
   }
@@ -214,11 +206,15 @@ function M.new(config)
   -- Update component configs with keymaps
   instance.list.config.keymap = modal_keymaps
   instance.list.config.on_repo = function(repository)
+    -- Track current repository for keybinding handlers
+    instance.state.current_repository = repository
+    
     http.get_readme(repository.full_name, function(data)
       if data.error then
-        print("Error fetching README:", data.error)
+        config.log.error("Error fetching README for " .. repository.full_name .. ": " .. data.error)
       end
-      instance.preview:render(data.body)
+      -- Pass repository.full_name as identifier for cursor position tracking
+      instance.preview:render(data.body, repository.full_name)
     end)
   end
   instance.preview.config.keymap = modal_keymaps
@@ -280,6 +276,11 @@ end
 function Modal2:close()
   if not self.is_open then
     return false
+  end
+
+  -- Save cursor position before closing
+  if self.preview then
+    self.preview:save_cursor_on_blur()
   end
 
   -- Close all components

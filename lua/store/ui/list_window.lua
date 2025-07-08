@@ -1,4 +1,5 @@
 local validators = require("store.validators")
+local utils = require("store.utils")
 
 local M = {}
 
@@ -125,7 +126,8 @@ local function validate(config)
   end
 
   if config.cursor_debounce_delay ~= nil then
-    local debounce_err = validators.should_be_number(config.cursor_debounce_delay, "list_window.cursor_debounce_delay must be a number")
+    local debounce_err =
+      validators.should_be_number(config.cursor_debounce_delay, "list_window.cursor_debounce_delay must be a number")
     if debounce_err then
       return debounce_err
     end
@@ -191,10 +193,10 @@ function ListWindow:_create_buffer()
 
   -- Set buffer-scoped keymaps
   for lhs, callback in pairs(self.config.keymap) do
-    vim.keymap.set('n', lhs, callback, {
+    vim.keymap.set("n", lhs, callback, {
       buffer = buf_id,
       silent = true,
-      desc = "Store.nvim list window: " .. lhs
+      desc = "Store.nvim list window: " .. lhs,
     })
   end
 
@@ -237,6 +239,7 @@ function ListWindow:open()
     colorcolumn = "",
     wrap = false,
     linebreak = false,
+    sidescrolloff = 0, -- Disable side scroll offset for precise width calculations
   }
 
   for option, value in pairs(win_opts) do
@@ -341,8 +344,30 @@ function ListWindow:render(state)
 
   for i, repo in ipairs(state.repositories) do
     self.repositories[i] = repo
-    -- Display full_name instead of html_url for better readability
-    table.insert(content_lines, repo.full_name or repo.html_url)
+
+    -- Create metadata string with consistent structure
+    local metadata_parts = {}
+
+    -- Always show stars (or 0 if missing)
+    local stars = repo.stargazers_count or 0
+    table.insert(metadata_parts, "⭐" .. stars)
+
+    -- Always show forks (or 0 if missing)
+    local forks = repo.fork_count or 0
+    table.insert(metadata_parts, "🍴" .. forks)
+
+    -- Always show watchers (or 0 if missing)
+    local watchers = repo.watchers_count or 0
+    table.insert(metadata_parts, "👀" .. watchers)
+
+    local metadata = table.concat(metadata_parts, " ")
+    local full_name = repo.full_name or repo.html_url
+
+    -- Format line with full_name on left and metadata on right
+    -- Account for border width (2 characters for rounded borders)
+    local content_width = self.config.width - 2
+    local formatted_line = utils.format_line_priority_right(content_width, full_name, metadata)
+    table.insert(content_lines, formatted_line)
   end
 
   vim.api.nvim_set_option_value("modifiable", true, { buf = self.buf_id })
