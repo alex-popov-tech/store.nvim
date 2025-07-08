@@ -13,7 +13,27 @@ local DEFAULT_PREVIEW_CONFIG = {
   keymap = {}, -- Table of lhs-callback pairs for buffer-scoped keybindings
 }
 
--- Validate preview window configuration
+---@class PreviewWindowConfig
+---@field width number Window width
+---@field height number Window height
+---@field row number Window row position
+---@field col number Window column position
+---@field border string Window border style
+---@field zindex number Window z-index
+---@field keymap table<string, function> Table of keybinding to callback mappings
+
+---@class PreviewWindow
+---@field config PreviewWindowConfig Window configuration
+---@field markview table Markview plugin instance
+---@field win_id number|nil Window ID
+---@field buf_id number|nil Buffer ID
+---@field is_open boolean Window open status
+---@field cursor_positions table<string, number[]> Map of README identifier to cursor position
+---@field current_readme_id string|nil Current README being displayed
+
+---Validate preview window configuration
+---@param config PreviewWindowConfig|nil Preview window configuration to validate
+---@return string|nil error_message Error message if validation fails, nil if valid
 local function validate(config)
   if config == nil then
     return nil
@@ -25,49 +45,49 @@ local function validate(config)
   end
 
   if config.width ~= nil then
-    local width_err = validators.should_be_number(config.width, "preview_window.width must be a number")
+    local width_err = validators.should_be_number(config.width, "preview.width must be a number")
     if width_err then
       return width_err
     end
   end
 
   if config.height ~= nil then
-    local height_err = validators.should_be_number(config.height, "preview_window.height must be a number")
+    local height_err = validators.should_be_number(config.height, "preview.height must be a number")
     if height_err then
       return height_err
     end
   end
 
   if config.row ~= nil then
-    local row_err = validators.should_be_number(config.row, "preview_window.row must be a number")
+    local row_err = validators.should_be_number(config.row, "preview.row must be a number")
     if row_err then
       return row_err
     end
   end
 
   if config.col ~= nil then
-    local col_err = validators.should_be_number(config.col, "preview_window.col must be a number")
+    local col_err = validators.should_be_number(config.col, "preview.col must be a number")
     if col_err then
       return col_err
     end
   end
 
   if config.border ~= nil then
-    local border_err = validators.should_be_string(config.border, "preview_window.border must be a string")
+    local border_err = validators.should_be_string(config.border, "preview.border must be a string")
     if border_err then
       return border_err
     end
   end
 
   if config.zindex ~= nil then
-    local zindex_err = validators.should_be_number(config.zindex, "preview_window.zindex must be a number")
+    local zindex_err = validators.should_be_number(config.zindex, "preview.zindex must be a number")
     if zindex_err then
       return zindex_err
     end
   end
 
   if config.keymap ~= nil then
-    local keymap_err = validators.should_be_table(config.keymap, "preview_window.keymap must be a table")
+    local keymap_err = validators.should_be_table(config.keymap, "preview.keymap must be a table")
     if keymap_err then
       return keymap_err
     end
@@ -81,8 +101,8 @@ local PreviewWindow = {}
 PreviewWindow.__index = PreviewWindow
 
 ---Create a new preview window instance
----@param preview_config table|nil Preview window configuration
----@return table PreviewWindow instance
+---@param preview_config PreviewWindowConfig|nil Preview window configuration
+---@return PreviewWindow instance PreviewWindow instance
 function M.new(preview_config)
   -- Validate configuration first
   local error_msg = validate(preview_config)
@@ -252,17 +272,28 @@ function PreviewWindow:_restore_cursor_position(readme_id)
 end
 
 ---Render markdown content in the preview window
----@param content table Array of markdown lines
+---@param content string[] Array of markdown lines
 ---@param readme_id string|nil Optional README identifier for cursor position tracking
 function PreviewWindow:render(content, readme_id)
-  if type(content) ~= "table" or type(content[1]) ~= "string" then
-    error("render() requires content to be a table of rows, got: " .. type(content))
+  -- Get logger from config module for consistent error handling
+  local config = require("store.config")
+  local log = config.get().log
+  
+  if type(content) ~= "table" then
+    log.warn("Preview window: Cannot render - content must be a table, got: " .. type(content))
+    return
+  end
+  if #content > 0 and type(content[1]) ~= "string" then
+    log.warn("Preview window: Cannot render - content must be array of strings")
+    return
   end
   if not self.is_open then
-    error("Window must be opened before rendering content")
+    log.warn("Preview window: Cannot render - window not open")
+    return
   end
   if not self.buf_id then
-    error("buf_id is nil or invalid")
+    log.warn("Preview window: Cannot render - invalid buffer")
+    return
   end
 
   -- Save cursor position for current README before switching
@@ -273,7 +304,8 @@ function PreviewWindow:render(content, readme_id)
     vim.api.nvim_buf_set_lines(self.buf_id, 0, -1, false, content)
     vim.api.nvim_set_option_value("modifiable", false, { buf = self.buf_id })
     if not self.markview.render then
-      error("markview.render is not available - check markview plugin version")
+      log.error("Preview window: markview.render is not available - check markview plugin version")
+      return
     end
     self.markview.render(self.buf_id, { enable = true, hybrid_mode = false }, nil)
 

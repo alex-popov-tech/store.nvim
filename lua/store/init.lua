@@ -1,30 +1,31 @@
 local config = require("store.config")
-local Modal2 = require("store.modal2")
+local StoreModal = require("store.ui.store_modal")
 
 local M = {}
 
+---@type StoreModal|nil
 local current_modal = nil
 
+---Setup the store.nvim plugin with configuration
+---@param args? UserConfig User configuration to merge with defaults
 M.setup = function(args)
   config.setup(args)
 end
 
+---Close the currently open store modal
 M.close = function()
   if current_modal then
     config.get().log.debug("Closing store modal")
     current_modal:close()
     current_modal = nil
-    return true
   end
-  return false
 end
 
-
--- Main function to open modal using new modal2 architecture
+---Open the store modal interface
 M.open = function()
-  -- Use atomic check and set to prevent race conditions
+  -- Atomic check and set to prevent race conditions
   if current_modal then
-    return false
+    return
   end
 
   config.get().log.debug("Opening store modal")
@@ -36,17 +37,17 @@ M.open = function()
     current_modal = nil
   end
 
-  local modal = Modal2.new(modal_config)
+  -- Create modal and immediately set reference to prevent race conditions
+  local modal = StoreModal.new(modal_config)
+  current_modal = modal -- Set reference immediately after creation
+
   local success = modal:open()
   if success then
-    current_modal = modal
     config.get().log.debug("Store modal opened successfully")
-    return true
   else
     config.get().log.error("Failed to open modal")
+    current_modal = nil -- Clear reference on failure
   end
-
-  return false
 end
 
 return M

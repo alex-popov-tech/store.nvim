@@ -1,12 +1,59 @@
 local validators = require("store.validators")
 local logger = require("store.logger")
 
+---@class LoggerConfig
+---@field notify boolean Enable notifications for logs
+---@field file boolean Enable file logging
+
+---@class ModalConfig
+---@field border string Border style (none, single, double, rounded, solid, shadow)
+---@field zindex number Z-index for modal windows
+---@field row number? Row position for modal (nil for centered)
+---@field col number? Column position for modal (nil for centered)
+---@field on_close fun()? Called on StoreModal:close()
+
+---@class ProportionsConfig
+---@field list number Proportion of width for list pane (0.0-1.0)
+---@field preview number Proportion of width for preview pane (0.0-1.0)
+
+---@class KeybindingsConfig
+---@field help string Key to show help
+---@field close string Key to close modal
+---@field filter string Key to open filter input
+---@field refresh string Key to refresh data
+---@field open string Key to open selected repository
+---@field switch_focus string Key to switch focus between panes
+
+---@class UserConfig
+---@field width? number Window width (0.0-1.0 for percentage, >1 for absolute)
+---@field height? number Window height (0.0-1.0 for percentage, >1 for absolute)
+---@field proportions? ProportionsConfig Layout proportions for panes
+---@field modal? ModalConfig Modal-specific configuration
+---@field keybindings? KeybindingsConfig Key binding configuration
+---@field preview_debounce? number Debounce delay for preview updates (ms)
+---@field cache_duration? number Cache duration in seconds
+---@field data_source_url? string URL for fetching plugin data
+---@field debug? boolean Enable debug mode
+---@field logger? LoggerConfig Logger configuration
+
+---@class ComputedConfig : UserConfig
+---@field computed_layout ComputedLayout Computed window layout dimensions
+---@field screen_info ScreenInfo Screen dimensions at time of computation
+---@field log table Logger instance
+---@field computed_at number Unix timestamp when config was computed
+
+---@class ScreenInfo
+---@field width number Screen width in columns
+---@field height number Screen height in lines
+
 local M = {}
 
 -- Logger instance (will be initialized in setup function)
+---@type PlenaryLogger|nil
 M.log = nil
 
 -- Internal storage for computed plugin config
+---@type ComputedConfig|nil
 local plugin_config = nil
 
 local DEFAULT_USER_CONFIG = {
@@ -26,6 +73,7 @@ local DEFAULT_USER_CONFIG = {
     zindex = 50,
     row = nil,
     col = nil,
+    on_close = nil,
   },
 
   -- Keybindings configuration
@@ -51,9 +99,26 @@ local DEFAULT_USER_CONFIG = {
   },
 }
 
--- Calculate window dimensions and positions for 3-window layout
----@param config table Modal configuration
----@return table Layout calculations
+---@class WindowLayout
+---@field width number Window width
+---@field height number Window height
+---@field row number Window row position
+---@field col number Window column position
+
+---@class ComputedLayout
+---@field total_width number Total modal width
+---@field total_height number Total modal height
+---@field start_row number Starting row position
+---@field start_col number Starting column position
+---@field header_height number Header window height
+---@field gap_between_windows number Gap between windows
+---@field header WindowLayout Header window layout
+---@field list WindowLayout List window layout
+---@field preview WindowLayout Preview window layout
+
+---Calculate window dimensions and positions for 3-window layout
+---@param config UserConfig Modal configuration with width, height, and proportions
+---@return ComputedLayout layout Layout calculations for all windows
 local function calculate_layout(config)
   local screen_width = vim.o.columns
   local screen_height = vim.o.lines
@@ -110,7 +175,16 @@ local function calculate_layout(config)
   }
 end
 
+---Validate user configuration against expected structure
+---@param config UserConfig|nil User-provided configuration
+---@param merged_config UserConfig Merged configuration with defaults
+---@return boolean is_valid True if configuration is valid
+---@return string|nil error_message Error message if validation fails
 local function validate_config(config, merged_config)
+  if not config then
+    return true, nil
+  end
+
   if config.width ~= nil then
     local err = validators.should_be_positive_number(config.width, "width must be a positive number")
     if err then
@@ -179,6 +253,8 @@ local function validate_config(config, merged_config)
   return true, nil
 end
 
+---Setup the configuration with user-provided options
+---@param user_config? UserConfig User configuration to merge with defaults
 function M.setup(user_config)
   -- Merge user config with defaults
   local merged_config = vim.tbl_deep_extend("force", DEFAULT_USER_CONFIG, user_config or {})
@@ -213,7 +289,8 @@ function M.setup(user_config)
   end
 end
 
--- Get plugin configuration (with lazy initialization)
+---Get plugin configuration (with lazy initialization)
+---@return ComputedConfig config The complete plugin configuration with computed layout
 function M.get()
   if not plugin_config then
     -- Lazy initialization with default user config

@@ -1,13 +1,15 @@
 ---@class HelpModal
 ---@field win_id number|nil Window ID of the help modal
 ---@field buf_id number|nil Buffer ID of the help modal
+---@field timer userdata|nil Timer reference for cleanup
 local HelpModal = {}
 
 local ZINDEX = {
   HELP_MODAL = 152,
 }
 
-local current_help_modal = nil
+---@type HelpModal|nil
+local current_help = nil
 
 ---Help modal configuration - list of keybinding to action pairs
 ---@type table[]
@@ -57,11 +59,11 @@ end
 ---Create and display the help window
 ---@return boolean Success status
 local function create_help_window()
-  if current_help_modal then
-    if current_help_modal.win_id and vim.api.nvim_win_is_valid(current_help_modal.win_id) then
-      vim.api.nvim_win_close(current_help_modal.win_id, true)
+  if current_help then
+    if current_help.win_id and vim.api.nvim_win_is_valid(current_help.win_id) then
+      vim.api.nvim_win_close(current_help.win_id, true)
     end
-    current_help_modal = nil
+    current_help = nil
   end
 
   -- Create buffer for help content
@@ -106,22 +108,26 @@ local function create_help_window()
   end
 
   -- Store reference
-  current_help_modal = {
-    win_id = help_winid,
-    buf_id = help_bufnr,
-  }
-
   -- Auto-close after 2 seconds
   local timer = vim.loop.new_timer()
+  
+  current_help = {
+    win_id = help_winid,
+    buf_id = help_bufnr,
+    timer = timer,
+  }
+
   timer:start(
     2000,
     0,
     vim.schedule_wrap(function()
-      if current_help_modal and current_help_modal.win_id and vim.api.nvim_win_is_valid(current_help_modal.win_id) then
-        vim.api.nvim_win_close(current_help_modal.win_id, true)
+      if current_help and current_help.win_id and vim.api.nvim_win_is_valid(current_help.win_id) then
+        vim.api.nvim_win_close(current_help.win_id, true)
       end
-      current_help_modal = nil
-      timer:close()
+      if current_help and current_help.timer then
+        current_help.timer:close()
+      end
+      current_help = nil
     end)
   )
 
@@ -130,11 +136,15 @@ end
 
 ---Close help modal if open
 local function close_help_if_open()
-  if current_help_modal then
-    if current_help_modal.win_id and vim.api.nvim_win_is_valid(current_help_modal.win_id) then
-      vim.api.nvim_win_close(current_help_modal.win_id, true)
+  if current_help then
+    if current_help.win_id and vim.api.nvim_win_is_valid(current_help.win_id) then
+      vim.api.nvim_win_close(current_help.win_id, true)
     end
-    current_help_modal = nil
+    -- Clean up timer to prevent resource leak
+    if current_help.timer then
+      current_help.timer:close()
+    end
+    current_help = nil
   end
 end
 
@@ -155,9 +165,9 @@ end
 ---Check if help modal is currently open
 ---@return boolean True if help modal is open
 function M.is_open()
-  return current_help_modal ~= nil
-    and current_help_modal.win_id ~= nil
-    and vim.api.nvim_win_is_valid(current_help_modal.win_id)
+  return current_help ~= nil
+    and current_help.win_id ~= nil
+    and vim.api.nvim_win_is_valid(current_help.win_id)
 end
 
 return M

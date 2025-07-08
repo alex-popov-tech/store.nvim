@@ -1,7 +1,9 @@
--- Store modal command - unified entry point
+---Store modal command - unified entry point
+---Creates a user command "Store" that opens the store modal interface
+---@usage :Store
 vim.api.nvim_create_user_command("Store", function()
-  require("store").toggle()
+  require("store").open()
 end, {
-  desc = "Toggle store modal",
+  desc = "Open store modal",
 })
 

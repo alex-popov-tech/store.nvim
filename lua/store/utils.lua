@@ -114,6 +114,11 @@ function M.open_url(url)
     return false
   end
 
+  -- Validate URL format for security
+  if not url:match("^https?://[%w%-%.%_%~%:/%?%#%[%]%@%!%$%&%'%(%)%*%+%,%;%=]+$") then
+    return false
+  end
+
   local cmd
   if vim.fn.has("mac") == 1 then
     cmd = "open"
@@ -125,8 +130,15 @@ function M.open_url(url)
     return false
   end
 
-  local success = vim.fn.system(cmd .. " " .. vim.fn.shellescape(url))
-  return vim.v.shell_error == 0
+  -- Use vim.system for better security (Neovim 0.10+)
+  if vim.system then
+    local result = vim.system({ cmd, url }, { text = true }):wait()
+    return result.code == 0
+  else
+    -- Fallback for older Neovim versions
+    local success = vim.fn.system(cmd .. " " .. vim.fn.shellescape(url))
+    return vim.v.shell_error == 0
+  end
 end
 
 return M

@@ -4,14 +4,14 @@ local config = require("store.config")
 
 ---@class Repository
 ---@field full_name string Repository full name (owner/repo)
----@field description string Repository description
----@field homepage string Repository homepage URL
+---@field description string|nil Repository description
+---@field homepage string|nil Repository homepage URL
 ---@field html_url string Repository GitHub URL
----@field stargazers_count number Number of stars
----@field watchers_count number Number of watchers
----@field fork_count number Number of forks
----@field updated_at string Last updated timestamp (ISO 8601)
----@field topics string[] Array of topic tags
+---@field stargazers_count number|nil Number of stars
+---@field watchers_count number|nil Number of watchers
+---@field fork_count number|nil Number of forks
+---@field updated_at string|nil Last updated timestamp (ISO 8601)
+---@field topics string[]|nil Array of topic tags
 
 ---@class PluginsData
 ---@field crawled_at string Timestamp when data was crawled
@@ -144,38 +144,45 @@ function M.get_readme(repo_path, callback)
         if json_success and json_data.content then
           local clean_content = json_data.content:gsub("\n", "")
           local content = vim.base64.decode(clean_content)
+          local split_lines = vim.split(content, "\n", { plain = true })
           local lines = {}
-          for _, line in ipairs(vim.split(content, "\n", { plain = true })) do
+          
+          -- Pre-allocate table for better performance
+          local line_count = #split_lines
+          for i = 1, line_count do
+            local line = split_lines[i]
             -- Only remove trailing whitespace, preserve leading whitespace (indentation)
             local trimmed_line = line:gsub("%s+$", "")
             local cleaned_line = strip_html_tags(trimmed_line)
-            table.insert(lines, cleaned_line)
+            lines[i] = cleaned_line  -- Direct assignment instead of table.insert
           end
 
           -- Post-process to remove standalone markdown inline images
           local image_filtered_lines = {}
-          for _, line in ipairs(lines) do
+          local filtered_count = 0
+          for i = 1, line_count do
+            local line = lines[i]
             -- Skip lines that are just markdown images (![alt](url))
             -- Match lines that start with ![, contain ](, and end with )
-            if line:match("^%s*!%[[^%]]*%]%(.-%)%s*$") then
-              -- Skip this line as it's a standalone markdown image
-            else
-              table.insert(image_filtered_lines, line)
+            if not line:match("^%s*!%[[^%]]*%]%(.-%)%s*$") then
+              filtered_count = filtered_count + 1
+              image_filtered_lines[filtered_count] = line  -- Direct assignment
             end
           end
           lines = image_filtered_lines
 
           -- Post-process to collapse multiple consecutive empty lines
           local collapsed_lines = {}
+          local collapsed_count = 0
           local prev_was_empty = false
 
-          for _, line in ipairs(lines) do
+          for i = 1, filtered_count do
+            local line = lines[i]
             local is_empty = line == ""
 
-            if is_empty and prev_was_empty then
-              -- Skip this empty line since previous was also empty
-            else
-              table.insert(collapsed_lines, line)
+            if not (is_empty and prev_was_empty) then
+              collapsed_count = collapsed_count + 1
+              collapsed_lines[collapsed_count] = line  -- Direct assignment
             end
 
             prev_was_empty = is_empty

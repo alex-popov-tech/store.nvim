@@ -1,9 +1,9 @@
 local http = require("store.http")
 local validators = require("store.validators")
 local utils = require("store.utils")
-local heading_window = require("store.ui.heading_window")
-local list_window = require("store.ui.list_window")
-local preview_window = require("store.ui.preview_window")
+local heading = require("store.ui.heading")
+local list = require("store.ui.list")
+local preview = require("store.ui.preview")
 
 local M = {}
 
@@ -14,6 +14,8 @@ local UI_CONFIG = {
 }
 
 -- Validate modal configuration
+---@param config ComputedConfig|nil Modal configuration to validate
+---@return string|nil error_message Error message if validation fails, nil if valid
 local function validate(config)
   if config == nil then
     return nil
@@ -65,16 +67,27 @@ local function validate(config)
   return nil
 end
 
--- Modal2 class - stateful orchestrator for UI components
-local Modal2 = {}
-Modal2.__index = Modal2
+---@class StoreModal
+---@field config ComputedConfig Complete computed configuration
+---@field layout ComputedLayout Window layout calculations
+---@field is_open boolean Modal open status
+---@field state table Modal state (filter_query, repos, etc.)
+---@field heading HeadingWindow Header component instance
+---@field list ListWindow List component instance
+---@field preview PreviewWindow Preview component instance
+---@field open fun(): boolean Open the modal and render all components
+---@field close fun(): boolean Close the modal and all components
+
+-- StoreModal class - stateful orchestrator for UI components
+local StoreModal = {}
+StoreModal.__index = StoreModal
 
 ---Create a new modal instance
----@param config table Modal configuration with width/height/proportions (from config.lua)
----@return table Modal2 instance
+---@param config ComputedConfig Complete computed configuration from config.lua
+---@return StoreModal StoreModal instance
 function M.new(config)
   if not config then
-    error("Configuration required. Modal2 expects config from config.lua")
+    error("Configuration required. StoreModal expects config from config.lua")
   end
 
   -- Validate configuration first
@@ -97,7 +110,7 @@ function M.new(config)
     },
 
     -- UI component instances (ready for rendering)
-    heading = heading_window.new({
+    heading = heading.new({
       width = config.computed_layout.header.width,
       height = config.computed_layout.header.height,
       row = config.computed_layout.header.row,
@@ -106,7 +119,7 @@ function M.new(config)
       zindex = UI_CONFIG.zindex,
     }),
 
-    preview = preview_window.new({
+    preview = preview.new({
       width = config.computed_layout.preview.width,
       height = config.computed_layout.preview.height,
       row = config.computed_layout.preview.row,
@@ -116,7 +129,7 @@ function M.new(config)
       keymap = {}, -- Will be populated below
     }),
 
-    list = list_window.new({
+    list = list.new({
       width = config.computed_layout.list.width,
       height = config.computed_layout.list.height,
       row = config.computed_layout.list.row,
@@ -192,8 +205,8 @@ function M.new(config)
       end)
     end,
     [config.keybindings.help] = function()
-      local help_modal = require("store.ui.help_modal")
-      help_modal.open()
+      local help = require("store.ui.help")
+      help.open()
     end,
     [config.keybindings.open] = function()
       if instance.state.current_repository and instance.state.current_repository.html_url then
@@ -214,7 +227,7 @@ function M.new(config)
   instance.list.config.on_repo = function(repository)
     -- Track current repository for keybinding handlers
     instance.state.current_repository = repository
-    
+
     http.get_readme(repository.full_name, function(data)
       if data.error then
         config.log.error("Error fetching README for " .. repository.full_name .. ": " .. data.error)
@@ -229,13 +242,13 @@ function M.new(config)
   instance.list.buf_id = instance.list:_create_buffer()
   instance.preview.buf_id = instance.preview:_create_buffer()
 
-  setmetatable(instance, Modal2)
+  setmetatable(instance, StoreModal)
   return instance
 end
 
 ---Open the modal and render all components
 ---@return boolean Success status
-function Modal2:open()
+function StoreModal:open()
   if self.is_open then
     return false
   end
@@ -250,10 +263,27 @@ function Modal2:open()
 
   http.fetch_plugins(function(data, err)
     if err then
-      error(err)
+      -- Log the error and show user-friendly message
+      self.config.log.error("Failed to fetch plugin data: " .. tostring(err))
+      self.heading:render({
+        query = "",
+        state = "error",
+        filtered_count = 0,
+        total_count = 0,
+      })
+      self.list:render({})
+      return
     end
     if not data then
-      error("Failed to fetch plugin data")
+      self.config.log.error("No plugin data received from server")
+      self.heading:render({
+        query = "",
+        state = "error",
+        filtered_count = 0,
+        total_count = 0,
+      })
+      self.list:render({})
+      return
     end
 
     -- Store repositories in modal state
@@ -279,7 +309,7 @@ end
 
 ---Close the modal and all components
 ---@return boolean Success status
-function Modal2:close()
+function StoreModal:close()
   if not self.is_open then
     return false
   end

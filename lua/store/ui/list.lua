@@ -5,14 +5,14 @@ local M = {}
 
 ---@class Repository
 ---@field full_name string Repository full name (owner/repo)
----@field description string Repository description
----@field homepage string Repository homepage URL
+---@field description string|nil Repository description
+---@field homepage string|nil Repository homepage URL
 ---@field html_url string Repository GitHub URL
----@field stargazers_count number Number of stars
----@field watchers_count number Number of watchers
----@field fork_count number Number of forks
----@field updated_at string Last updated timestamp
----@field topics string[] Array of topic tags
+---@field stargazers_count number|nil Number of stars
+---@field watchers_count number|nil Number of watchers
+---@field fork_count number|nil Number of forks
+---@field updated_at string|nil Last updated timestamp
+---@field topics string[]|nil Array of topic tags
 
 ---@class ListState
 ---@field state string current component state - "loading", "ready"
@@ -25,7 +25,7 @@ local M = {}
 ---@field col number Window column position
 ---@field border string Window border style
 ---@field zindex number Window z-index
----@field on_repo fun(repository: Repository, line_number?: number) Callback when cursor moves over repository
+---@field on_repo fun(repository: Repository) Callback when cursor moves over repository
 ---@field keymap table<string, function> Table of keybinding to callback mappings
 ---@field cursor_debounce_delay number Debounce delay for cursor movement in milliseconds
 
@@ -70,56 +70,56 @@ local function validate(config)
   end
 
   if config.width ~= nil then
-    local width_err = validators.should_be_number(config.width, "list_window.width must be a number")
+    local width_err = validators.should_be_number(config.width, "list.width must be a number")
     if width_err then
       return width_err
     end
   end
 
   if config.height ~= nil then
-    local height_err = validators.should_be_number(config.height, "list_window.height must be a number")
+    local height_err = validators.should_be_number(config.height, "list.height must be a number")
     if height_err then
       return height_err
     end
   end
 
   if config.row ~= nil then
-    local row_err = validators.should_be_number(config.row, "list_window.row must be a number")
+    local row_err = validators.should_be_number(config.row, "list.row must be a number")
     if row_err then
       return row_err
     end
   end
 
   if config.col ~= nil then
-    local col_err = validators.should_be_number(config.col, "list_window.col must be a number")
+    local col_err = validators.should_be_number(config.col, "list.col must be a number")
     if col_err then
       return col_err
     end
   end
 
   if config.border ~= nil then
-    local border_err = validators.should_be_string(config.border, "list_window.border must be a string")
+    local border_err = validators.should_be_string(config.border, "list.border must be a string")
     if border_err then
       return border_err
     end
   end
 
   if config.zindex ~= nil then
-    local zindex_err = validators.should_be_number(config.zindex, "list_window.zindex must be a number")
+    local zindex_err = validators.should_be_number(config.zindex, "list.zindex must be a number")
     if zindex_err then
       return zindex_err
     end
   end
 
   if config.on_repo ~= nil then
-    local callback_err = validators.should_be_function(config.on_repo, "list_window.on_repo must be a function")
+    local callback_err = validators.should_be_function(config.on_repo, "list.on_repo must be a function")
     if callback_err then
       return callback_err
     end
   end
 
   if config.keymap ~= nil then
-    local keymap_err = validators.should_be_table(config.keymap, "list_window.keymap must be a table")
+    local keymap_err = validators.should_be_table(config.keymap, "list.keymap must be a table")
     if keymap_err then
       return keymap_err
     end
@@ -127,7 +127,7 @@ local function validate(config)
 
   if config.cursor_debounce_delay ~= nil then
     local debounce_err =
-      validators.should_be_number(config.cursor_debounce_delay, "list_window.cursor_debounce_delay must be a number")
+      validators.should_be_number(config.cursor_debounce_delay, "list.cursor_debounce_delay must be a number")
     if debounce_err then
       return debounce_err
     end
@@ -270,12 +270,18 @@ end
 ---Setup cursor movement callbacks with debouncing
 ---@return nil
 function ListWindow:_setup_cursor_callbacks()
+  -- Get logger from config module for consistent error handling
+  local config = require("store.config")
+  local log = config.get().log
+  
   if not self.config.on_repo then
-    error("on_repo callback must be provided")
+    log.error("List window: Cannot setup cursor callbacks - on_repo callback not provided")
+    return
   end
 
   if not self.win_id then
-    error("win_id is nil - cannot setup cursor callbacks")
+    log.error("List window: Cannot setup cursor callbacks - win_id is nil")
+    return
   end
 
   -- Create autocommand for cursor movement (only CursorMoved, no insert mode)
@@ -318,17 +324,27 @@ end
 ---@param state ListState List state to render
 ---@return nil
 function ListWindow:render(state)
+  -- Get logger from config module for consistent error handling
+  local config = require("store.config")
+  local log = config.get().log
+  
+  -- Graceful error handling instead of crashing
   if not self.is_open then
-    error("Window must be opened before rendering content")
+    log.warn("List window: Cannot render - window not open")
+    return
   end
   if not self.buf_id or not vim.api.nvim_buf_is_valid(self.buf_id) then
-    error("buf_id is nil or invalid")
+    log.warn("List window: Cannot render - invalid buffer")
+    return
   end
   if not state or type(state) ~= "table" then
-    error("state must be a table")
+    log.warn("List window: Cannot render - invalid state")
+    return
   end
   if not state.repositories or type(state.repositories) ~= "table" then
-    error("state.repositories must be a table")
+    log.warn("List window: Cannot render - invalid repositories")
+    -- Provide fallback behavior
+    state = vim.tbl_deep_extend("force", state, { repositories = {} })
   end
 
   if state.state == "loading" then
@@ -380,7 +396,7 @@ function ListWindow:render(state)
 
     -- Trigger initial callback if we have repository data for first line
     if self.config.on_repo and self.repositories[1] then
-      self.config.on_repo(self.repositories[1], 1)
+      self.config.on_repo(self.repositories[1])
     end
   end
 end

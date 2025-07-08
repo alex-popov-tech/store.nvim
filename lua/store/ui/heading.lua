@@ -48,42 +48,42 @@ local function validate(config)
   end
 
   if config.width ~= nil then
-    local width_err = validators.should_be_number(config.width, "heading_window.width must be a number")
+    local width_err = validators.should_be_number(config.width, "heading.width must be a number")
     if width_err then
       return width_err
     end
   end
 
   if config.height ~= nil then
-    local height_err = validators.should_be_number(config.height, "heading_window.height must be a number")
+    local height_err = validators.should_be_number(config.height, "heading.height must be a number")
     if height_err then
       return height_err
     end
   end
 
   if config.row ~= nil then
-    local row_err = validators.should_be_number(config.row, "heading_window.row must be a number")
+    local row_err = validators.should_be_number(config.row, "heading.row must be a number")
     if row_err then
       return row_err
     end
   end
 
   if config.col ~= nil then
-    local col_err = validators.should_be_number(config.col, "heading_window.col must be a number")
+    local col_err = validators.should_be_number(config.col, "heading.col must be a number")
     if col_err then
       return col_err
     end
   end
 
   if config.border ~= nil then
-    local border_err = validators.should_be_string(config.border, "heading_window.border must be a string")
+    local border_err = validators.should_be_string(config.border, "heading.border must be a string")
     if border_err then
       return border_err
     end
   end
 
   if config.zindex ~= nil then
-    local zindex_err = validators.should_be_number(config.zindex, "heading_window.zindex must be a number")
+    local zindex_err = validators.should_be_number(config.zindex, "heading.zindex must be a number")
     if zindex_err then
       return zindex_err
     end
@@ -92,13 +92,31 @@ local function validate(config)
   return nil
 end
 
+---@class HeadingConfig
+---@field width number Window width
+---@field height number Window height
+---@field row number Window row position
+---@field col number Window column position
+---@field border string Window border style
+---@field zindex number Window z-index
+
+---@class HeadingWindow
+---@field config HeadingConfig Window configuration
+---@field win_id number|nil Window ID
+---@field buf_id number|nil Buffer ID
+---@field is_open boolean Window open status
+---@field open fun(self: HeadingWindow): boolean
+---@field close fun(self: HeadingWindow): boolean
+---@field render fun(self: HeadingWindow, data: HeadingState)
+---@field is_window_open fun(self: HeadingWindow): boolean
+
 -- HeadingWindow class
 local HeadingWindow = {}
 HeadingWindow.__index = HeadingWindow
 
 ---Create a new heading window instance
----@param heading_config table|nil Heading window configuration
----@return table HeadingWindow instance
+---@param heading_config HeadingConfig|nil Heading window configuration
+---@return HeadingWindow HeadingWindow instance
 function M.new(heading_config)
   -- Validate configuration first
   local error_msg = validate(heading_config)
@@ -207,9 +225,14 @@ end
 ---Render content for the heading window
 ---@param data HeadingState Heading display data
 function HeadingWindow:render(data)
+  -- Get logger from config module for consistent error handling
+  local config = require("store.config")
+  local log = config.get().log
+  
   -- Only update content if window is open
   if not self.is_open then
-    error("Window must be opened before rendering content")
+    log.warn("Heading window: Cannot render - window not open")
+    return
   end
 
   -- Generate header content lines
@@ -248,7 +271,8 @@ function HeadingWindow:render(data)
   table.insert(content_lines, utils.format_line(width, ASCII_ART[6], help_text))
 
   if not self.buf_id or not vim.api.nvim_buf_is_valid(self.buf_id) then
-    error("buf_id is nil or invalid")
+    log.warn("Heading window: Cannot render - invalid buffer")
+    return
   end
 
   vim.api.nvim_set_option_value("modifiable", true, { buf = self.buf_id })

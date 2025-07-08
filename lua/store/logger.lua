@@ -8,7 +8,9 @@ local DEFAULT_LOGGER_CONFIG = {
   notify = false,
 }
 
--- Validate logger configuration (consistent with existing validators pattern)
+---Validate logger configuration (consistent with existing validators pattern)
+---@param config LoggerConfig|nil Logger configuration to validate
+---@return string|nil error_message Error message if validation fails, nil if valid
 local function validate(config)
   if config == nil then
     return nil
@@ -36,7 +38,15 @@ local function validate(config)
   return nil
 end
 
--- Create new logger instance following the mermaid diagram pattern
+---@class PlenaryLogger
+---@field debug fun(self: PlenaryLogger, ...: any)
+---@field info fun(self: PlenaryLogger, ...: any)
+---@field warn fun(self: PlenaryLogger, ...: any)
+---@field error fun(self: PlenaryLogger, ...: any)
+
+---Create new logger instance following the mermaid diagram pattern
+---@param logger_config LoggerConfig|nil Logger configuration
+---@return PlenaryLogger logger Plenary logger instance with debug, info, warn, error methods
 function M.new(logger_config)
   -- Validate configuration first (as shown in mermaid diagram)
   local error_msg = validate(logger_config)

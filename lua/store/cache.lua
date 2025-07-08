@@ -1,9 +1,29 @@
 local Path = require("plenary.path")
+---@type PlenaryLogger
 local log = require("plenary.log").new({
   plugin = "store.nvim",
   level = "debug",
   use_console = false,
 })
+
+---@class CacheItem
+---@field content any The cached content
+---@field timestamp number Unix timestamp when the item was cached
+
+---@class ReadmeCacheItem
+---@field content string[] README content as array of lines
+---@field timestamp number Unix timestamp when the item was cached
+
+---@class PluginsCacheItem
+---@field content PluginsData Plugin data structure
+---@field timestamp number Unix timestamp when the item was cached
+
+---@class ReadmeInfo
+---@field filename string The filename where the README is stored
+---@field updated_at number Unix timestamp when the README was last updated
+
+---@class ReadmesMapping
+---@field [string] ReadmeInfo Mapping from plugin URL to ReadmeInfo
 
 local M = {}
 
@@ -11,15 +31,23 @@ local M = {}
 local DEFAULT_CACHE_MAX_AGE = 24 * 60 * 60
 
 -- In-memory cache storage
+---@type table<string, ReadmeCacheItem>
 local readmes_memory_cache = {}
-local plugins_memory_cache = {}
+---@type PluginsCacheItem
+local plugins_memory_cache = {
+  content = { crawled_at = "", total_repositories = 0, repositories = {} },
+  timestamp = 0
+}
 
--- Get the cache directory path
+---Get the cache directory path
+---@return Path cache_dir The cache directory path object
 local function get_cache_dir()
   return Path:new(vim.fn.stdpath("cache"), "store.nvim")
 end
 
--- Convert GitHub URL to unique filename
+---Convert GitHub URL to unique filename
+---@param url string GitHub repository URL
+---@return string filename Unique filename for the repository
 local function url_to_filename(url)
   -- Extract owner/repo from https://github.com/owner/repo
   local owner_repo = url:match("github%.com/([^/]+/[^/]+)")
@@ -35,7 +63,10 @@ local function url_to_filename(url)
   end
 end
 
--- Check if a file is stale based on modification time
+---Check if a file is stale based on modification time
+---@param file_path Path The file path to check
+---@param max_age_seconds? number Maximum age in seconds (default: 24 hours)
+---@return boolean is_stale True if file is stale or doesn't exist
 local function is_file_stale(file_path, max_age_seconds)
   max_age_seconds = max_age_seconds or DEFAULT_CACHE_MAX_AGE
 
@@ -52,7 +83,10 @@ local function is_file_stale(file_path, max_age_seconds)
   return age > max_age_seconds
 end
 
--- Check if a memory cached item is stale based on timestamp
+---Check if a memory cached item is stale based on timestamp
+---@param cache_item ReadmeCacheItem|PluginsCacheItem|nil The cache item to check
+---@param max_age_seconds? number Maximum age in seconds (default: 24 hours)
+---@return boolean is_stale True if item is stale or doesn't exist
 local function is_memory_cache_stale(cache_item, max_age_seconds)
   max_age_seconds = max_age_seconds or DEFAULT_CACHE_MAX_AGE
 
@@ -64,7 +98,8 @@ local function is_memory_cache_stale(cache_item, max_age_seconds)
   return age > max_age_seconds
 end
 
--- Read the readmes mapping file
+---Read the readmes mapping file
+---@return ReadmesMapping mapping The readmes mapping or empty table if not found
 local function read_readmes_mapping()
   local cache_dir = get_cache_dir()
   local readmes_file = cache_dir / "readmes.json"
@@ -80,7 +115,9 @@ local function read_readmes_mapping()
   return success and content or {}
 end
 
--- Write the readmes mapping file
+---Write the readmes mapping file
+---@param mapping ReadmesMapping The mapping to write
+---@return boolean success True if successfully written
 local function write_readmes_mapping(mapping)
   local cache_dir = get_cache_dir()
 
@@ -101,7 +138,10 @@ local function write_readmes_mapping(mapping)
   return success
 end
 
--- Public API: Save README content and update mapping
+---Save README content and update mapping
+---@param plugin_url string The GitHub repository URL
+---@param content string|string[] The README content (string or array of lines)
+---@return boolean success True if successfully saved
 function M.save_readme(plugin_url, content)
   if not plugin_url or not content then
     return false
@@ -144,7 +184,9 @@ function M.save_readme(plugin_url, content)
   return write_readmes_mapping(mapping)
 end
 
--- Public API: Save plugins data
+---Save plugins data to cache
+---@param content PluginsData The plugins data to save
+---@return boolean success True if successfully saved
 function M.save_plugins(content)
   if not content then
     return false
@@ -176,7 +218,10 @@ function M.save_plugins(content)
   return success
 end
 
--- Public API: Get cached README content
+---Get cached README content
+---@param plugin_url string The GitHub repository URL
+---@return string[] content The README content as array of lines
+---@return boolean is_valid True if cache hit and content is valid
 function M.get_readme(plugin_url)
   if not plugin_url then
     return {}, false
@@ -227,10 +272,12 @@ function M.get_readme(plugin_url)
   end
 end
 
--- Public API: Get cached plugins data
+---Get cached plugins data
+---@return PluginsData content The plugins data
+---@return boolean is_valid True if cache hit and content is valid
 function M.list_plugins()
   -- Check memory cache first
-  if plugins_memory_cache and not is_memory_cache_stale(plugins_memory_cache) then
+  if not is_memory_cache_stale(plugins_memory_cache) then
     return plugins_memory_cache.content, true
   end
 
