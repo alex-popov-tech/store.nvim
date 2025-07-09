@@ -1,9 +1,4 @@
 local validators = require("store.validators")
-local logger = require("store.logger")
-
----@class LoggerConfig
----@field notify boolean Enable notifications for logs
----@field file boolean Enable file logging
 
 ---@class ModalConfig
 ---@field border string Border style (none, single, double, rounded, solid, shadow)
@@ -33,13 +28,11 @@ local logger = require("store.logger")
 ---@field preview_debounce? number Debounce delay for preview updates (ms)
 ---@field cache_duration? number Cache duration in seconds
 ---@field data_source_url? string URL for fetching plugin data
----@field debug? boolean Enable debug mode
----@field logger? LoggerConfig Logger configuration
+---@field logging? string Logging level: "off"|"error"|"warn"|"log"|"debug" (default: "off")
 
 ---@class ComputedConfig : UserConfig
 ---@field computed_layout ComputedLayout Computed window layout dimensions
 ---@field screen_info ScreenInfo Screen dimensions at time of computation
----@field log table Logger instance
 ---@field computed_at number Unix timestamp when config was computed
 
 ---@class ScreenInfo
@@ -47,10 +40,6 @@ local logger = require("store.logger")
 ---@field height number Screen height in lines
 
 local M = {}
-
--- Logger instance (will be initialized in setup function)
----@type PlenaryLogger|nil
-M.log = nil
 
 -- Internal storage for computed plugin config
 ---@type ComputedConfig|nil
@@ -92,11 +81,7 @@ local DEFAULT_USER_CONFIG = {
   data_source_url = "https://gist.githubusercontent.com/alex-popov-tech/93dcd3ce38cbc7a0b3245b9b59b56c9b/raw/store.nvim-repos.json", -- URL for plugin data
 
   -- Logging
-  debug = false,
-  logger = {
-    notify = false,
-    file = false,
-  },
+  logging = "off",
 }
 
 ---@class WindowLayout
@@ -231,10 +216,24 @@ local function validate_config(config, merged_config)
     end
   end
 
-  if config.debug ~= nil then
-    local err = validators.should_be_boolean(config.debug, "debug must be a boolean value")
+  if config.logging ~= nil then
+    local err = validators.should_be_string(config.logging, "logging must be a string")
     if err then
       return false, err
+    end
+
+    -- Validate logging level value
+    local valid_levels = { "off", "error", "warn", "log", "debug" }
+    local is_valid_level = false
+    for _, level in ipairs(valid_levels) do
+      if config.logging == level then
+        is_valid_level = true
+        break
+      end
+    end
+
+    if not is_valid_level then
+      return false, "logging must be one of: off, error, warn, log, debug"
     end
   end
 
@@ -259,14 +258,9 @@ function M.setup(user_config)
   -- Merge user config with defaults
   local merged_config = vim.tbl_deep_extend("force", DEFAULT_USER_CONFIG, user_config or {})
 
-  -- Extract logger config and initialize logger
-  local logger_config = merged_config.logger or {}
-  M.log = logger.new(logger_config)
-
   -- Validate the merged configuration
   local is_valid, error_msg = validate_config(user_config, merged_config)
   if not is_valid then
-    M.log.error("Configuration error: " .. error_msg)
     error("Store.nvim configuration error: " .. error_msg)
   end
 
@@ -280,13 +274,8 @@ function M.setup(user_config)
       width = vim.o.columns,
       height = vim.o.lines,
     },
-    log = M.log,
     computed_at = os.time(),
   })
-
-  if merged_config.debug then
-    M.log.info("Configuration loaded successfully")
-  end
 end
 
 ---Get plugin configuration (with lazy initialization)

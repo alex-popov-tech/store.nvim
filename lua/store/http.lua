@@ -72,7 +72,6 @@ local function strip_html_tags(content)
   return content
 end
 
-
 ---Fetch plugins from the gist URL, with caching support
 ---@param callback fun(data: PluginsData|nil, error: string|nil) Callback function with plugins data or error
 function M.fetch_plugins(callback)
@@ -146,7 +145,7 @@ function M.get_readme(repo_path, callback)
           local content = vim.base64.decode(clean_content)
           local split_lines = vim.split(content, "\n", { plain = true })
           local lines = {}
-          
+
           -- Pre-allocate table for better performance
           local line_count = #split_lines
           for i = 1, line_count do
@@ -154,7 +153,7 @@ function M.get_readme(repo_path, callback)
             -- Only remove trailing whitespace, preserve leading whitespace (indentation)
             local trimmed_line = line:gsub("%s+$", "")
             local cleaned_line = strip_html_tags(trimmed_line)
-            lines[i] = cleaned_line  -- Direct assignment instead of table.insert
+            lines[i] = cleaned_line -- Direct assignment instead of table.insert
           end
 
           -- Post-process to remove standalone markdown inline images
@@ -166,7 +165,7 @@ function M.get_readme(repo_path, callback)
             -- Match lines that start with ![, contain ](, and end with )
             if not line:match("^%s*!%[[^%]]*%]%(.-%)%s*$") then
               filtered_count = filtered_count + 1
-              image_filtered_lines[filtered_count] = line  -- Direct assignment
+              image_filtered_lines[filtered_count] = line -- Direct assignment
             end
           end
           lines = image_filtered_lines
@@ -182,7 +181,7 @@ function M.get_readme(repo_path, callback)
 
             if not (is_empty and prev_was_empty) then
               collapsed_count = collapsed_count + 1
-              collapsed_lines[collapsed_count] = line  -- Direct assignment
+              collapsed_lines[collapsed_count] = line -- Direct assignment
             end
 
             prev_was_empty = is_empty

@@ -1,10 +1,5 @@
 local Path = require("plenary.path")
----@type PlenaryLogger
-local log = require("plenary.log").new({
-  plugin = "store.nvim",
-  level = "debug",
-  use_console = false,
-})
+local logger = require("store.logger")
 
 ---@class CacheItem
 ---@field content any The cached content
@@ -36,7 +31,7 @@ local readmes_memory_cache = {}
 ---@type PluginsCacheItem
 local plugins_memory_cache = {
   content = { crawled_at = "", total_repositories = 0, repositories = {} },
-  timestamp = 0
+  timestamp = 0,
 }
 
 ---Get the cache directory path
@@ -132,7 +127,7 @@ local function write_readmes_mapping(mapping)
   end)
 
   if not success then
-    log.warn("Failed to write readmes cache: " .. tostring(err))
+    logger.warn("Failed to write readmes cache: " .. tostring(err))
   end
 
   return success
@@ -144,8 +139,11 @@ end
 ---@return boolean success True if successfully saved
 function M.save_readme(plugin_url, content)
   if not plugin_url or not content then
+    logger.warn("save_readme called with missing parameters")
     return false
   end
+
+  logger.debug("Saving README to cache for: " .. plugin_url)
 
   -- Update memory cache first
   readmes_memory_cache[plugin_url] = {
@@ -170,9 +168,11 @@ function M.save_readme(plugin_url, content)
   end)
 
   if not success then
-    log.warn("Failed to save README cache: " .. tostring(err))
+    logger.error("Failed to save README cache: " .. tostring(err))
     return false
   end
+
+  logger.debug("README saved successfully to: " .. readme_file:absolute())
 
   -- Update readmes mapping
   local mapping = read_readmes_mapping()
@@ -189,8 +189,11 @@ end
 ---@return boolean success True if successfully saved
 function M.save_plugins(content)
   if not content then
+    logger.warn("save_plugins called with missing content")
     return false
   end
+
+  logger.debug("Saving plugins data to cache")
 
   -- Update memory cache first
   plugins_memory_cache = {
@@ -212,7 +215,9 @@ function M.save_plugins(content)
   end)
 
   if not success then
-    log.warn("Failed to save plugins cache: " .. tostring(err))
+    logger.error("Failed to save plugins cache: " .. tostring(err))
+  else
+    logger.debug("Plugins data saved successfully")
   end
 
   return success
@@ -224,12 +229,14 @@ end
 ---@return boolean is_valid True if cache hit and content is valid
 function M.get_readme(plugin_url)
   if not plugin_url then
+    logger.warn("get_readme called with missing plugin_url")
     return {}, false
   end
 
   -- Check memory cache first
   local memory_item = readmes_memory_cache[plugin_url]
   if memory_item and not is_memory_cache_stale(memory_item) then
+    logger.debug("README cache hit (memory) for: " .. plugin_url)
     local content = memory_item.content
     if type(content) == "table" then
       return content, true
@@ -244,6 +251,7 @@ function M.get_readme(plugin_url)
   local readme_info = mapping[plugin_url]
 
   if not readme_info then
+    logger.debug("No cache entry found for: " .. plugin_url)
     return {}, false
   end
 
@@ -251,6 +259,7 @@ function M.get_readme(plugin_url)
 
   -- Check if file exists and is not stale
   if is_file_stale(readme_file) then
+    logger.debug("README cache file is stale: " .. readme_file:absolute())
     return {}, false
   end
 
@@ -261,6 +270,7 @@ function M.get_readme(plugin_url)
   end)
 
   if success then
+    logger.debug("README cache hit (file) for: " .. plugin_url)
     -- Update memory cache with file content
     readmes_memory_cache[plugin_url] = {
       content = content,
@@ -268,6 +278,7 @@ function M.get_readme(plugin_url)
     }
     return content, true
   else
+    logger.error("Failed to read README cache file: " .. readme_file:absolute())
     return {}, false
   end
 end
@@ -278,6 +289,7 @@ end
 function M.list_plugins()
   -- Check memory cache first
   if not is_memory_cache_stale(plugins_memory_cache) then
+    logger.debug("Plugins cache hit (memory)")
     return plugins_memory_cache.content, true
   end
 
@@ -287,6 +299,7 @@ function M.list_plugins()
 
   -- Check if file exists and is not stale
   if is_file_stale(plugins_file) then
+    logger.debug("Plugins cache file is stale: " .. plugins_file:absolute())
     return {}, false
   end
 
@@ -296,6 +309,7 @@ function M.list_plugins()
   end)
 
   if success then
+    logger.debug("Plugins cache hit (file)")
     -- Update memory cache with file content
     plugins_memory_cache = {
       content = content,
@@ -303,6 +317,7 @@ function M.list_plugins()
     }
     return content, true
   else
+    logger.error("Failed to read plugins cache file: " .. plugins_file:absolute())
     return {}, false
   end
 end

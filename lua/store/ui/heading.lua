@@ -1,13 +1,32 @@
 local validators = require("store.validators")
 local utils = require("store.utils")
+local logger = require("store.logger")
 
 local M = {}
+
+---@class HeadingConfig
+---@field width number Window width
+---@field height number Window height
+---@field row number Window row position
+---@field col number Window column position
+---@field border string Window border style
+---@field zindex number Window z-index
+
+---@class HeadingWindow
+---@field config HeadingConfig Window configuration
+---@field win_id number|nil Window ID
+---@field buf_id number|nil Buffer ID
+---@field is_open boolean Window open status
+---@field open fun(self: HeadingWindow): boolean
+---@field close fun(self: HeadingWindow): boolean
+---@field render fun(self: HeadingWindow, data: HeadingState)
+---@field is_window_open fun(self: HeadingWindow): boolean
 
 ---@class HeadingState
 ---@field query string Current filter query
 ---@field filtered_count number Number of plugins after filtering
 ---@field total_count number Total number of plugins
----@field state string current component state - "loading", "ready"
+---@field state string current component state - "loading", "ready", "error"
 
 -- Default heading window configuration
 local DEFAULT_CONFIG = {
@@ -92,24 +111,6 @@ local function validate(config)
   return nil
 end
 
----@class HeadingConfig
----@field width number Window width
----@field height number Window height
----@field row number Window row position
----@field col number Window column position
----@field border string Window border style
----@field zindex number Window z-index
-
----@class HeadingWindow
----@field config HeadingConfig Window configuration
----@field win_id number|nil Window ID
----@field buf_id number|nil Buffer ID
----@field is_open boolean Window open status
----@field open fun(self: HeadingWindow): boolean
----@field close fun(self: HeadingWindow): boolean
----@field render fun(self: HeadingWindow, data: HeadingState)
----@field is_window_open fun(self: HeadingWindow): boolean
-
 -- HeadingWindow class
 local HeadingWindow = {}
 HeadingWindow.__index = HeadingWindow
@@ -165,13 +166,10 @@ function HeadingWindow:_create_buffer()
 end
 
 ---Open the heading window with default content
----@return boolean Success status
 function HeadingWindow:open()
   if self.is_open then
-    return false
+    return
   end
-
-  -- Buffer already created in constructor
 
   local win_config = {
     relative = "editor",
@@ -185,9 +183,11 @@ function HeadingWindow:open()
     focusable = false, -- Header should not be focusable
   }
 
+  -- Buffer already created in constructor
   self.win_id = vim.api.nvim_open_win(self.buf_id, false, win_config)
   if not self.win_id then
-    return false
+    logger.error("Heading window: Failed to open window")
+    return
   end
 
   -- Set window options optimized for static header display
@@ -210,74 +210,62 @@ function HeadingWindow:open()
 
   -- Set default content
   self:render(DEFAULT_STATE)
-
-  return true
-end
-
----Create floating window for heading (internal method)
----@return boolean Success status
-function HeadingWindow:_create_window()
-  if self.is_open then
-    return false
-  end
 end
 
 ---Render content for the heading window
 ---@param data HeadingState Heading display data
 function HeadingWindow:render(data)
-  -- Get logger from config module for consistent error handling
-  local config = require("store.config")
-  local log = config.get().log
-  
   -- Only update content if window is open
   if not self.is_open then
-    log.warn("Heading window: Cannot render - window not open")
+    logger.warn("Heading window: Cannot render - window not open")
     return
   end
 
-  -- Generate header content lines
-  local content_lines = {}
-  local width = self.config.width
+  vim.schedule(function()
+    -- Generate header content lines
+    local content_lines = {}
+    local width = self.config.width
 
-  -- Line 0: ASCII art only
-  table.insert(content_lines, utils.format_line(width, ASCII_ART[1]))
+    -- Line 0: ASCII art only
+    table.insert(content_lines, utils.format_line(width, ASCII_ART[1]))
 
-  -- Line 1: ASCII art + filter info
-  local filter_text = ""
-  if data.query ~= "" then
-    filter_text = "Filter: " .. data.query
-  else
-    filter_text = "Filter: none"
-  end
-  table.insert(content_lines, utils.format_line(width, ASCII_ART[2], filter_text))
+    -- Line 1: ASCII art + filter info
+    local filter_text = ""
+    if data.query ~= "" then
+      filter_text = "Filter: " .. data.query
+    else
+      filter_text = "Filter: none"
+    end
+    table.insert(content_lines, utils.format_line(width, ASCII_ART[2], filter_text))
 
-  -- Line 2: ASCII art only
-  table.insert(content_lines, utils.format_line(width, ASCII_ART[3]))
+    -- Line 2: ASCII art only
+    table.insert(content_lines, utils.format_line(width, ASCII_ART[3]))
 
-  -- Line 3: ASCII art + plugin count
-  local count_text = ""
-  if data.state == "loading" then
-    count_text = "Loading plugins..."
-  else
-    count_text = string.format("Showing %d of %d plugins", data.filtered_count, data.total_count)
-  end
-  table.insert(content_lines, utils.format_line(width, ASCII_ART[4], count_text))
+    -- Line 3: ASCII art + plugin count
+    local count_text = ""
+    if data.state == "loading" then
+      count_text = "Loading plugins..."
+    else
+      count_text = string.format("Showing %d of %d plugins", data.filtered_count, data.total_count)
+    end
+    table.insert(content_lines, utils.format_line(width, ASCII_ART[4], count_text))
 
-  -- Line 4: ASCII art only
-  table.insert(content_lines, utils.format_line(width, ASCII_ART[5]))
+    -- Line 4: ASCII art only
+    table.insert(content_lines, utils.format_line(width, ASCII_ART[5]))
 
-  -- Line 5: ASCII art + help text
-  local help_text = "Press ? for help"
-  table.insert(content_lines, utils.format_line(width, ASCII_ART[6], help_text))
+    -- Line 5: ASCII art + help text
+    local help_text = "Press ? for help"
+    table.insert(content_lines, utils.format_line(width, ASCII_ART[6], help_text))
 
-  if not self.buf_id or not vim.api.nvim_buf_is_valid(self.buf_id) then
-    log.warn("Heading window: Cannot render - invalid buffer")
-    return
-  end
+    if not self.buf_id or not vim.api.nvim_buf_is_valid(self.buf_id) then
+      logger.warn("Heading window: Cannot render - invalid buffer")
+      return
+    end
 
-  vim.api.nvim_set_option_value("modifiable", true, { buf = self.buf_id })
-  vim.api.nvim_buf_set_lines(self.buf_id, 0, -1, false, content_lines)
-  vim.api.nvim_set_option_value("modifiable", false, { buf = self.buf_id })
+    vim.api.nvim_set_option_value("modifiable", true, { buf = self.buf_id })
+    vim.api.nvim_buf_set_lines(self.buf_id, 0, -1, false, content_lines)
+    vim.api.nvim_set_option_value("modifiable", false, { buf = self.buf_id })
+  end)
 end
 
 ---Check if heading window is currently open

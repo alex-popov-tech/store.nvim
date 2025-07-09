@@ -1,5 +1,6 @@
 local validators = require("store.validators")
 local utils = require("store.utils")
+local logger = require("store.logger")
 
 local M = {}
 
@@ -270,17 +271,13 @@ end
 ---Setup cursor movement callbacks with debouncing
 ---@return nil
 function ListWindow:_setup_cursor_callbacks()
-  -- Get logger from config module for consistent error handling
-  local config = require("store.config")
-  local log = config.get().log
-  
   if not self.config.on_repo then
-    log.error("List window: Cannot setup cursor callbacks - on_repo callback not provided")
+    logger.error("List window: Cannot setup cursor callbacks - on_repo callback not provided")
     return
   end
 
   if not self.win_id then
-    log.error("List window: Cannot setup cursor callbacks - win_id is nil")
+    logger.error("List window: Cannot setup cursor callbacks - win_id is nil")
     return
   end
 
@@ -324,81 +321,79 @@ end
 ---@param state ListState List state to render
 ---@return nil
 function ListWindow:render(state)
-  -- Get logger from config module for consistent error handling
-  local config = require("store.config")
-  local log = config.get().log
-  
   -- Graceful error handling instead of crashing
   if not self.is_open then
-    log.warn("List window: Cannot render - window not open")
+    logger.warn("List window: Cannot render - window not open")
     return
   end
-  if not self.buf_id or not vim.api.nvim_buf_is_valid(self.buf_id) then
-    log.warn("List window: Cannot render - invalid buffer")
-    return
-  end
-  if not state or type(state) ~= "table" then
-    log.warn("List window: Cannot render - invalid state")
-    return
-  end
-  if not state.repositories or type(state.repositories) ~= "table" then
-    log.warn("List window: Cannot render - invalid repositories")
-    -- Provide fallback behavior
-    state = vim.tbl_deep_extend("force", state, { repositories = {} })
-  end
-
-  if state.state == "loading" then
-    vim.api.nvim_set_option_value("modifiable", true, { buf = self.buf_id })
-    vim.api.nvim_buf_set_lines(self.buf_id, 0, -1, false, { "Loading plugins..." })
-    vim.api.nvim_set_option_value("modifiable", false, { buf = self.buf_id })
-    return
-  end
-
-  -- Store repository data and create content lines
-  self.repositories = {}
-  local content_lines = {}
-
-  for i, repo in ipairs(state.repositories) do
-    self.repositories[i] = repo
-
-    -- Create metadata string with consistent structure
-    local metadata_parts = {}
-
-    -- Always show stars (or 0 if missing)
-    local stars = repo.stargazers_count or 0
-    table.insert(metadata_parts, "⭐" .. utils.format_number(stars))
-
-    -- Always show forks (or 0 if missing)
-    local forks = repo.fork_count or 0
-    table.insert(metadata_parts, "🍴" .. utils.format_number(forks))
-
-    -- Always show watchers (or 0 if missing)
-    local watchers = repo.watchers_count or 0
-    table.insert(metadata_parts, "👀" .. utils.format_number(watchers))
-
-    local metadata = table.concat(metadata_parts, " ")
-    local full_name = repo.full_name or repo.html_url
-
-    -- Format line with full_name on left and metadata on right
-    -- Account for border width (2 characters for rounded borders)
-    local content_width = self.config.width - 2
-    local formatted_line = utils.format_line_priority_right(content_width, full_name, metadata)
-    table.insert(content_lines, formatted_line)
-  end
-
-  vim.api.nvim_set_option_value("modifiable", true, { buf = self.buf_id })
-  vim.api.nvim_buf_set_lines(self.buf_id, 0, -1, false, content_lines)
-  vim.api.nvim_set_option_value("modifiable", false, { buf = self.buf_id })
-
-  -- Position cursor at first line if window is valid
-  if self.win_id and vim.api.nvim_win_is_valid(self.win_id) and #content_lines > 0 then
-    vim.api.nvim_win_set_cursor(self.win_id, { 1, 0 })
-
-    -- Trigger initial callback if we have repository data for first line
-    if self.config.on_repo and self.repositories[1] then
-      self.config.on_repo(self.repositories[1])
+  vim.schedule(function()
+    if not self.buf_id or not vim.api.nvim_buf_is_valid(self.buf_id) then
+      logger.warn("List window: Cannot render - invalid buffer")
+      return
     end
-  end
+    if not state or type(state) ~= "table" then
+      logger.warn("List window: Cannot render - invalid state")
+      return
+    end
+    if not state.repositories or type(state.repositories) ~= "table" then
+      logger.warn("List window: Cannot render - invalid repositories")
+      -- Provide fallback behavior
+      state = vim.tbl_deep_extend("force", state, { repositories = {} })
+    end
+
+    if state.state == "loading" then
+      vim.api.nvim_set_option_value("modifiable", true, { buf = self.buf_id })
+      vim.api.nvim_buf_set_lines(self.buf_id, 0, -1, false, { "Loading plugins..." })
+      vim.api.nvim_set_option_value("modifiable", false, { buf = self.buf_id })
+      return
+    end
+
+    -- Store repository data and create content lines
+    self.repositories = {}
+    local content_lines = {}
+
+    for i, repo in ipairs(state.repositories) do
+      self.repositories[i] = repo
+
+      -- Create metadata string with consistent structure
+      local metadata_parts = {}
+
+      -- Always show stars (or 0 if missing)
+      local stars = repo.stargazers_count or 0
+      table.insert(metadata_parts, "⭐" .. utils.format_number(stars))
+
+      -- Always show forks (or 0 if missing)
+      local forks = repo.fork_count or 0
+      table.insert(metadata_parts, "🍴" .. utils.format_number(forks))
+
+      -- Always show watchers (or 0 if missing)
+      local watchers = repo.watchers_count or 0
+      table.insert(metadata_parts, "👀" .. utils.format_number(watchers))
+
+      local metadata = table.concat(metadata_parts, " ")
+      local full_name = repo.full_name or repo.html_url
+
+      -- Format line with full_name on left and metadata on right
+      -- Account for border width (2 characters for rounded borders)
+      local content_width = self.config.width - 2
+      local formatted_line = utils.format_line_priority_right(content_width, full_name, metadata)
+      table.insert(content_lines, formatted_line)
+    end
+
+    vim.api.nvim_set_option_value("modifiable", true, { buf = self.buf_id })
+    vim.api.nvim_buf_set_lines(self.buf_id, 0, -1, false, content_lines)
+    vim.api.nvim_set_option_value("modifiable", false, { buf = self.buf_id })
+
+    -- Position cursor at first line if window is valid
+    if self.win_id and vim.api.nvim_win_is_valid(self.win_id) and #content_lines > 0 then
+      vim.api.nvim_win_set_cursor(self.win_id, { 1, 0 })
+
+      -- Trigger initial callback if we have repository data for first line
+      if self.config.on_repo and self.repositories[1] then
+        self.config.on_repo(self.repositories[1])
+      end
+    end
+  end)
 end
 
 ---Check if list window is currently open

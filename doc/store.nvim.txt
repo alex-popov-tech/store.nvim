@@ -1,0 +1,397 @@
+*store.nvim.txt*           For NVIM v0.12.0          Last change: 2025 July 09
+
+==============================================================================
+Table of Contents                               *store.nvim-table-of-contents*
+
+1. store.nvim                                          |store.nvim-store.nvim|
+  - Table of Contents                |store.nvim-store.nvim-table-of-contents|
+  - Overview                                  |store.nvim-store.nvim-overview|
+  - Features                                  |store.nvim-store.nvim-features|
+  - Installation                          |store.nvim-store.nvim-installation|
+  - Quick Start                            |store.nvim-store.nvim-quick-start|
+  - Configuration                        |store.nvim-store.nvim-configuration|
+  - Public API                              |store.nvim-store.nvim-public-api|
+  - Commands                                  |store.nvim-store.nvim-commands|
+  - Keybindings                            |store.nvim-store.nvim-keybindings|
+  - Examples                                  |store.nvim-store.nvim-examples|
+  - Troubleshooting                    |store.nvim-store.nvim-troubleshooting|
+
+==============================================================================
+1. store.nvim                                          *store.nvim-store.nvim*
+
+A Neovim plugin for browsing and discovering awesome Neovim plugins through an
+intuitive UI modal interface.
+
+
+TABLE OF CONTENTS                    *store.nvim-store.nvim-table-of-contents*
+
+- |store.nvim-overview|
+- |store.nvim-features|
+- |store.nvim-installation|
+- |store.nvim-quick-start|
+- |store.nvim-configuration|
+- |store.nvim-public-api|
+- |store.nvim-commands|
+- |store.nvim-keybindings|
+- |store.nvim-examples|
+- |store.nvim-troubleshooting|
+
+
+OVERVIEW                                      *store.nvim-store.nvim-overview*
+
+store.nvim provides a beautiful, interactive modal interface for discovering
+and exploring Neovim plugins. It fetches plugin data from the awesome-neovim
+repository and presents it in a user-friendly three-pane layout with live
+README previews.
+
+
+FEATURES                                      *store.nvim-store.nvim-features*
+
+- **Interactive Modal Interface**: Clean, resizable UI with header, list, and preview panes
+- **Live README Preview**: Real-time markdown rendering with syntax highlighting
+- **Smart Filtering**: Filter plugins by name or description with instant search
+- **Intelligent Caching**: 24-hour cache with automatic staleness detection
+- **Cross-platform Browser Integration**: Open plugin repositories directly in your browser
+- **Configurable Layout**: Customizable proportions, keybindings, and styling
+- **Comprehensive Logging**: Optional debug logging for troubleshooting
+
+
+INSTALLATION                              *store.nvim-store.nvim-installation*
+
+
+USING LAZY.NVIM ~
+
+>lua
+    {
+      "alex-popov-tech/store.nvim",
+      dependencies = {
+        "nvim-lua/plenary.nvim",
+        "OXY2DEV/markview.nvim",
+      },
+      cmd = "Store",
+      keys = {
+        { "<leader>s", "<cmd>Store<cr>", desc = "Open Plugin Store" },
+      },
+      opts = {
+        -- Your configuration here
+      },
+    }
+<
+
+
+QUICK START                                *store.nvim-store.nvim-quick-start*
+
+After installation, you can open the plugin browser in two ways:
+
+1. **Using the command**: `:Store`
+2. **Using the Lua API**: `require("store").open()`
+
+Example keybinding setup:
+
+>lua
+    vim.keymap.set("n", "<leader>s", require("store").open, { desc = "Open Plugin Store" })
+<
+
+
+CONFIGURATION                            *store.nvim-store.nvim-configuration*
+
+
+DEFAULT CONFIGURATION ~
+
+>lua
+    {
+      -- Main window dimensions (percentages or absolute)
+      width = 0.8, -- 80% of screen width
+      height = 0.8, -- 80% of screen height
+    
+      -- Window layout proportions (must sum to 1.0)
+      proportions = {
+        list = 0.3, -- 30% for repository list
+        preview = 0.7, -- 70% for preview pane
+      },
+    
+      -- Modal-specific configuration
+      modal = {
+        border = "rounded", -- Border style: none, single, double, rounded, solid, shadow
+        zindex = 50, -- Z-index for modal windows
+        row = nil, -- Row position (nil for centered)
+        col = nil, -- Column position (nil for centered)
+        on_close = nil, -- Callback function when modal closes
+      },
+    
+      -- Keybindings configuration
+      keybindings = {
+        help = "?", -- Show help
+        close = "q", -- Close modal
+        filter = "f", -- Open filter input
+        refresh = "r", -- Refresh data
+        open = "<cr>", -- Open selected repository
+        switch_focus = "<tab>", -- Switch focus between panes
+      },
+    
+      -- Behavior settings
+      preview_debounce = 150, -- ms delay for preview updates
+      cache_duration = 24 * 60 * 60, -- 24 hours in seconds
+      data_source_url = "https://gist.githubusercontent.com/alex-popov-tech/93dcd3ce38cbc7a0b3245b9b59b56c9b/raw/store.nvim-repos.json",
+    
+      -- Logging configuration
+      logging = "off", -- Levels: off, error, warn, log, debug
+    }
+<
+
+
+PUBLIC API                                  *store.nvim-store.nvim-public-api*
+
+
+REQUIRE(�STORE�).SETUP(CONFIG) ~
+
+Initialize the plugin with optional configuration.
+
+**Parameters:** - `config` (table, optional): Configuration table (see
+Configuration section)
+
+**Example:**
+
+>lua
+    require("store").setup({
+      width = 0.9,
+      height = 0.9,
+      keybindings = {
+        close = "<Esc>",
+        filter = "/",
+      },
+      logging = "debug",
+    })
+<
+
+
+REQUIRE(�STORE�).OPEN() ~
+
+Open the store modal interface. If a modal is already open, this function does
+nothing to prevent race conditions.
+
+**Returns:** - None
+
+**Example:**
+
+>lua
+    -- Open the store modal
+    require("store").open()
+    
+    -- Or create a custom keybinding
+    vim.keymap.set("n", "<leader>s", require("store").open, { desc = "Open store.nvim" })
+<
+
+
+REQUIRE(�STORE�).CLOSE() ~
+
+Close the currently open store modal. If no modal is open, this function does
+nothing.
+
+**Returns:** - None
+
+**Example:**
+
+>lua
+    -- Close the store modal programmatically
+    require("store").close()
+<
+
+
+COMMANDS                                      *store.nvim-store.nvim-commands*
+
+
+:STORE ~
+
+Opens the store modal interface. This is the primary command for interacting
+with the plugin.
+
+**Usage:**
+
+>vim
+    :Store
+<
+
+**Example:**
+
+>vim
+    " Open store modal
+    :Store
+    
+    " Create custom command alias
+    :command! Plugins Store
+<
+
+
+KEYBINDINGS                                *store.nvim-store.nvim-keybindings*
+
+
+DEFAULT KEYBINDINGS ~
+
+When the store modal is open, the following keybindings are available:
+
+  Key     Action         Description
+  ------- -------------- ---------------------------------------------
+  ?       Help           Show help modal with all keybindings
+  q       Close          Close the store modal
+  f       Filter         Open filter input for searching plugins
+  r       Refresh        Refresh plugin data from source
+  <CR>    Open           Open selected plugin repository in browser
+  <Tab>   Switch Focus   Switch focus between list and preview panes
+
+FILTER MODE KEYBINDINGS ~
+
+When filter input is active:
+
+  Key     Action          Description
+  ------- --------------- ------------------------------------------
+  <CR>    Apply Filter    Apply the current filter and close input
+  <Esc>   Cancel Filter   Cancel filtering and close input
+
+NAVIGATION ~
+
+  Key           Action         Description
+  ------------- -------------- ---------------------------------
+  j/k           Navigate       Move up/down in the plugin list
+  <Up>/<Down>   Navigate       Move up/down in the plugin list
+  gg            Go to Top      Jump to first plugin
+  G             Go to Bottom   Jump to last plugin
+
+EXAMPLES                                      *store.nvim-store.nvim-examples*
+
+
+BASIC SETUP ~
+
+>lua
+    -- Minimal configuration
+    require("store").setup()
+<
+
+
+CUSTOM LAYOUT ~
+
+>lua
+    require("store").setup({
+      width = 0.95,
+      height = 0.90,
+      proportions = {
+        list = 0.4, -- 40% for list
+        preview = 0.6, -- 60% for preview
+      },
+      modal = {
+        border = "double",
+        zindex = 100,
+      },
+    })
+<
+
+
+CUSTOM KEYBINDINGS ~
+
+>lua
+    require("store").setup({
+      keybindings = {
+        help = "<F1>",
+        close = "<Esc>",
+        filter = "/",
+        refresh = "<F5>",
+        open = "<CR>",
+        switch_focus = "<C-w>",
+      },
+    })
+<
+
+
+DEVELOPMENT CONFIGURATION ~
+
+>lua
+    require("store").setup({
+      logging = "debug",
+      cache_duration = 60, -- 1 minute for development
+      preview_debounce = 50, -- Faster preview updates
+    })
+<
+
+
+CUSTOM DATA SOURCE ~
+
+>lua
+    require("store").setup({
+      data_source_url = "https://your-custom-domain.com/plugins.json",
+      cache_duration = 12 * 60 * 60, -- 12 hours
+    })
+<
+
+
+INTEGRATION WITH CUSTOM KEYBINDINGS ~
+
+>lua
+    -- Global keybinding to open store
+    vim.keymap.set("n", "<leader>sp", require("store").open, { desc = "Open Plugin Store" })
+    
+    -- Close store with custom keybinding
+    vim.keymap.set("n", "<leader>sq", require("store").close, { desc = "Close Plugin Store" })
+    
+    -- Setup with custom config
+    require("store").setup({
+      width = 0.8,
+      height = 0.8,
+      modal = {
+        on_close = function()
+          print("Store modal closed!")
+        end,
+      },
+    })
+<
+
+
+TROUBLESHOOTING                        *store.nvim-store.nvim-troubleshooting*
+
+
+COMMON ISSUES ~
+
+
+MODAL NOT OPENING
+
+**Problem:** The `:Store` command doesn’t open the modal.
+
+**Solution:** 1. Check if the plugin is properly installed 2. Verify
+plenary.nvim is installed as a dependency 3. Ensure markview.nvim is installed
+and working 4. Check if there are any error messages in `:messages`
+
+
+PREVIEW NOT LOADING
+
+**Problem:** README previews are not showing.
+
+**Solution:** 1. Check internet connectivity 2. Verify the data source URL is
+accessible 3. Ensure markview.nvim is properly configured 4. Check if the
+repository has a README file
+
+
+SLOW PERFORMANCE
+
+**Problem:** Modal is slow to open or navigate.
+
+**Solution:** 1. Increase preview debounce delay:
+
+>lua
+    require("store").setup({
+      preview_debounce = 300, -- Increase to 300ms
+    })
+<
+
+1. Check cache configuration:
+
+>lua
+    require("store").setup({
+      cache_duration = 24 * 60 * 60, -- Ensure long cache duration
+    })
+<
+
+For more help, open an issue at:
+https://github.com/alex-popov-tech/store.nvim/issues
+
+Generated by panvimdoc <https://github.com/kdheepak/panvimdoc>
+
+vim:tw=78:ts=8:noet:ft=help:norl:

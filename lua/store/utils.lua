@@ -91,7 +91,7 @@ function M.format_number(num)
   if type(num) ~= "number" then
     return "0"
   end
-  
+
   if num < 1000 then
     return tostring(num)
   elseif num < 1000000 then

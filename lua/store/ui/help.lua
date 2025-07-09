@@ -77,6 +77,13 @@ local function create_help_window()
   vim.api.nvim_buf_set_lines(help_bufnr, 0, -1, false, help_content)
   vim.bo[help_bufnr].modifiable = false
 
+  -- Explicitly enable markview for consistent rendering regardless of context
+  local markview_ok, markview = pcall(require, "markview")
+  if markview_ok and markview.actions then
+    markview.actions.attach(help_bufnr)
+    markview.actions.enable(help_bufnr)
+  end
+
   -- Calculate dimensions based on content (no horizontal padding needed)
   local max_width = 0
   for _, line in ipairs(help_content) do
@@ -103,6 +110,12 @@ local function create_help_window()
     focusable = false, -- Make it non-focusable so it's just for reading
   })
 
+  if help_winid then
+    -- Set window options required for markview to render properly
+    vim.api.nvim_set_option_value("conceallevel", 3, { win = help_winid })
+    vim.api.nvim_set_option_value("concealcursor", "nvc", { win = help_winid })
+  end
+
   if not help_winid then
     return false
   end
@@ -110,7 +123,7 @@ local function create_help_window()
   -- Store reference
   -- Auto-close after 2 seconds
   local timer = vim.loop.new_timer()
-  
+
   current_help = {
     win_id = help_winid,
     buf_id = help_bufnr,
@@ -165,9 +178,7 @@ end
 ---Check if help modal is currently open
 ---@return boolean True if help modal is open
 function M.is_open()
-  return current_help ~= nil
-    and current_help.win_id ~= nil
-    and vim.api.nvim_win_is_valid(current_help.win_id)
+  return current_help ~= nil and current_help.win_id ~= nil and vim.api.nvim_win_is_valid(current_help.win_id)
 end
 
 return M

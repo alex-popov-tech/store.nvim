@@ -1,71 +1,99 @@
-local validators = require("store.validators")
-
 local M = {}
 
--- Default logger configuration (private)
-local DEFAULT_LOGGER_CONFIG = {
-  file = false,
-  notify = false,
+---@class LoggerConfig
+---@field logging? string Logging level: "off"|"error"|"warn"|"log"|"debug" (default: "off")
+
+---@class Logger
+---@field debug fun(message: string): nil
+---@field warn fun(message: string): nil
+---@field error fun(message: string): nil
+---@field log fun(level: string?, message: string): nil
+
+-- Internal configuration state
+local config = {
+  logging = "off",
 }
 
----Validate logger configuration (consistent with existing validators pattern)
----@param config LoggerConfig|nil Logger configuration to validate
----@return string|nil error_message Error message if validation fails, nil if valid
-local function validate(config)
-  if config == nil then
-    return nil
-  end
+-- Define logging levels and their numeric values for comparison
+local log_levels = {
+  off = 0,
+  error = 1,
+  warn = 2,
+  log = 3,
+  debug = 4,
+}
 
-  local err = validators.should_be_table(config, "logger config must be a table")
-  if err then
-    return err
-  end
-
-  if config.file ~= nil then
-    local file_err = validators.should_be_boolean(config.file, "logger.file must be a boolean")
-    if file_err then
-      return file_err
-    end
-  end
-
-  if config.notify ~= nil then
-    local notify_err = validators.should_be_boolean(config.notify, "logger.notify must be a boolean")
-    if notify_err then
-      return notify_err
-    end
-  end
-
-  return nil
+---Format log message with timestamp and level
+---@param level string Log level (debug, warn, error, log)
+---@param message string Log message
+---@return string formatted_message
+local function format_message(level, message)
+  local timestamp = os.date("%H:%M:%S")
+  return string.format("[%s] [store.nvim] [%s] %s", timestamp, level:upper(), message)
 end
 
----@class PlenaryLogger
----@field debug fun(self: PlenaryLogger, ...: any)
----@field info fun(self: PlenaryLogger, ...: any)
----@field warn fun(self: PlenaryLogger, ...: any)
----@field error fun(self: PlenaryLogger, ...: any)
+---Check if a log level should be shown based on current configuration
+---@param level string The log level to check
+---@return boolean should_log True if the log level should be shown
+local function should_log(level)
+  local current_level = log_levels[config.logging] or 0
+  local message_level = log_levels[level] or 0
+  return message_level <= current_level and message_level > 0
+end
 
----Create new logger instance following the mermaid diagram pattern
----@param logger_config LoggerConfig|nil Logger configuration
----@return PlenaryLogger logger Plenary logger instance with debug, info, warn, error methods
-function M.new(logger_config)
-  -- Validate configuration first (as shown in mermaid diagram)
-  local error_msg = validate(logger_config)
-  if error_msg then
-    error("Logger configuration validation failed: " .. error_msg)
+---Main log function that handles all logging
+---@param level string? Log level (defaults to "log")
+---@param message string Log message
+function M.log(level, message)
+  -- Handle case where level is omitted (level becomes message, message becomes nil)
+  if message == nil then
+    message = level
+    level = "log"
   end
 
-  -- Merge with defaults
-  local config = vim.tbl_deep_extend("force", DEFAULT_LOGGER_CONFIG, logger_config or {})
+  -- Early return if logging is disabled or level is too low
+  if not should_log(level) then
+    return
+  end
 
-  -- Create plenary logger instance
-  local plenary_logger = require("plenary.log").new({
-    plugin = "store.nvim",
-    level = "debug",
-    use_console = config.notify,
-    use_file = config.file,
-  })
+  -- Format and send to vim.notify
+  local formatted = format_message(level, message)
+  vim.notify(formatted)
+end
 
-  return plenary_logger
+---Debug level logging
+---@param message string Log message
+function M.debug(message)
+  M.log("debug", message)
+end
+
+---Warning level logging
+---@param message string Log message
+function M.warn(message)
+  M.log("warn", message)
+end
+
+---Error level logging
+---@param message string Log message
+function M.error(message)
+  M.log("error", message)
+end
+
+---Setup logger with configuration
+---@param logger_config LoggerConfig? Configuration object
+function M.setup(logger_config)
+  if logger_config and logger_config.logging ~= nil then
+    -- Validate logging level
+    if log_levels[logger_config.logging] then
+      config.logging = logger_config.logging
+    else
+      vim.notify(
+        "[store.nvim] Invalid logging level: " .. tostring(logger_config.logging) .. ". Using 'off'.",
+        vim.log.levels.WARN
+      )
+      config.logging = "off"
+    end
+  end
 end
 
 return M

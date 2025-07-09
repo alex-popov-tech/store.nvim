@@ -1,5 +1,6 @@
 local config = require("store.config")
 local StoreModal = require("store.ui.store_modal")
+local logger = require("store.logger")
 
 local M = {}
 
@@ -10,12 +11,14 @@ local current_modal = nil
 ---@param args? UserConfig User configuration to merge with defaults
 M.setup = function(args)
   config.setup(args)
+  -- Setup logger with logging level from configuration
+  logger.setup({ logging = config.get().logging })
 end
 
 ---Close the currently open store modal
 M.close = function()
   if current_modal then
-    config.get().log.debug("Closing store modal")
+    logger.debug("Closing store modal")
     current_modal:close()
     current_modal = nil
   end
@@ -28,12 +31,12 @@ M.open = function()
     return
   end
 
-  config.get().log.debug("Opening store modal")
+  logger.debug("Opening store modal")
 
   local modal_config = config.get()
   modal_config.on_close = function()
     -- Clear current_modal reference when modal is closed via keybinding
-    config.get().log.debug("Modal closed via keybinding, clearing reference")
+    logger.debug("Modal closed via keybinding, clearing reference")
     current_modal = nil
   end
 
@@ -43,9 +46,9 @@ M.open = function()
 
   local success = modal:open()
   if success then
-    config.get().log.debug("Store modal opened successfully")
+    logger.debug("Store modal opened successfully")
   else
-    config.get().log.error("Failed to open modal")
+    logger.error("Failed to open modal")
     current_modal = nil -- Clear reference on failure
   end
 end

@@ -4,6 +4,7 @@ local utils = require("store.utils")
 local heading = require("store.ui.heading")
 local list = require("store.ui.list")
 local preview = require("store.ui.preview")
+local logger = require("store.logger")
 
 local M = {}
 
@@ -90,9 +91,12 @@ function M.new(config)
     error("Configuration required. StoreModal expects config from config.lua")
   end
 
+  logger.debug("Creating new StoreModal instance")
+
   -- Validate configuration first
   local error_msg = validate(config)
   if error_msg then
+    logger.error("Modal configuration validation failed: " .. error_msg)
     error("Modal configuration validation failed: " .. error_msg)
   end
 
@@ -172,9 +176,12 @@ function M.new(config)
           -- Update filter query in state
           instance.state.filter_query = input
 
+          logger.debug("Filter query updated: '" .. input .. "'")
+
           -- Filter repositories based on query (case-insensitive)
           if input == "" then
             instance.state.filtered_repos = instance.state.repos
+            logger.debug("Filter cleared, showing all repositories")
           else
             local query_lower = input:lower()
             instance.state.filtered_repos = {}
@@ -187,6 +194,14 @@ function M.new(config)
               end
             end
           end
+
+          logger.debug(
+            "Filter applied: "
+              .. #instance.state.filtered_repos
+              .. " of "
+              .. #instance.state.repos
+              .. " repositories match"
+          )
 
           -- Update heading with new filter stats
           instance.heading:render({
@@ -212,12 +227,12 @@ function M.new(config)
       if instance.state.current_repository and instance.state.current_repository.html_url then
         local success = utils.open_url(instance.state.current_repository.html_url)
         if not success then
-          config.log.error("Failed to open URL: " .. instance.state.current_repository.html_url)
+          logger.error("Failed to open URL: " .. instance.state.current_repository.html_url)
         else
-          config.log.debug("Opened repository URL: " .. instance.state.current_repository.html_url)
+          logger.debug("Opened repository URL: " .. instance.state.current_repository.html_url)
         end
       else
-        config.log.warn("No repository selected")
+        logger.warn("No repository selected")
       end
     end,
   }
@@ -230,7 +245,7 @@ function M.new(config)
 
     http.get_readme(repository.full_name, function(data)
       if data.error then
-        config.log.error("Error fetching README for " .. repository.full_name .. ": " .. data.error)
+        logger.error("Error fetching README for " .. repository.full_name .. ": " .. data.error)
       end
       -- Pass repository.full_name as identifier for cursor position tracking
       instance.preview:render(data.body, repository.full_name)
@@ -250,13 +265,18 @@ end
 ---@return boolean Success status
 function StoreModal:open()
   if self.is_open then
+    logger.warn("Attempted to open modal that is already open")
     return false
   end
+
+  logger.debug("Opening StoreModal")
 
   self.heading:open()
   self.list:open()
   self.preview:open()
   self.is_open = true
+
+  logger.debug("StoreModal components opened successfully")
 
   -- Focus the list component by default
   self.list:focus()
@@ -264,7 +284,7 @@ function StoreModal:open()
   http.fetch_plugins(function(data, err)
     if err then
       -- Log the error and show user-friendly message
-      self.config.log.error("Failed to fetch plugin data: " .. tostring(err))
+      logger.error("Failed to fetch plugin data: " .. tostring(err))
       self.heading:render({
         query = "",
         state = "error",
@@ -275,7 +295,7 @@ function StoreModal:open()
       return
     end
     if not data then
-      self.config.log.error("No plugin data received from server")
+      logger.error("No plugin data received from server")
       self.heading:render({
         query = "",
         state = "error",
@@ -289,6 +309,8 @@ function StoreModal:open()
     -- Store repositories in modal state
     self.state.repos = data.repositories or {}
     self.state.filtered_repos = data.repositories or {}
+
+    logger.log("Plugin data loaded successfully: " .. tostring(data.total_repositories) .. " repositories")
 
     self.heading:render({
       query = "",
@@ -311,8 +333,11 @@ end
 ---@return boolean Success status
 function StoreModal:close()
   if not self.is_open then
+    logger.warn("Attempted to close modal that is not open")
     return false
   end
+
+  logger.debug("Closing StoreModal")
 
   -- Save cursor position before closing
   if self.preview then
@@ -333,6 +358,8 @@ function StoreModal:close()
   end
 
   self.is_open = false
+
+  logger.debug("StoreModal closed successfully")
 
   return true
 end

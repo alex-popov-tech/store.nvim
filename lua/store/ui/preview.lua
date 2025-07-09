@@ -1,4 +1,5 @@
 local validators = require("store.validators")
+local logger = require("store.logger")
 
 local M = {}
 
@@ -275,24 +276,20 @@ end
 ---@param content string[] Array of markdown lines
 ---@param readme_id string|nil Optional README identifier for cursor position tracking
 function PreviewWindow:render(content, readme_id)
-  -- Get logger from config module for consistent error handling
-  local config = require("store.config")
-  local log = config.get().log
-  
   if type(content) ~= "table" then
-    log.warn("Preview window: Cannot render - content must be a table, got: " .. type(content))
+    logger.warn("Preview window: Cannot render - content must be a table, got: " .. type(content))
     return
   end
   if #content > 0 and type(content[1]) ~= "string" then
-    log.warn("Preview window: Cannot render - content must be array of strings")
+    logger.warn("Preview window: Cannot render - content must be array of strings")
     return
   end
   if not self.is_open then
-    log.warn("Preview window: Cannot render - window not open")
+    logger.warn("Preview window: Cannot render - window not open")
     return
   end
   if not self.buf_id then
-    log.warn("Preview window: Cannot render - invalid buffer")
+    logger.warn("Preview window: Cannot render - invalid buffer")
     return
   end
 
@@ -304,7 +301,7 @@ function PreviewWindow:render(content, readme_id)
     vim.api.nvim_buf_set_lines(self.buf_id, 0, -1, false, content)
     vim.api.nvim_set_option_value("modifiable", false, { buf = self.buf_id })
     if not self.markview.render then
-      log.error("Preview window: markview.render is not available - check markview plugin version")
+      logger.error("Preview window: markview.render is not available - check markview plugin version")
       return
     end
     self.markview.render(self.buf_id, { enable = true, hybrid_mode = false }, nil)
