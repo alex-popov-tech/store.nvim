@@ -12,8 +12,9 @@ jobs:
       - name: panvimdoc
         uses: kdheepak/panvimdoc@main
         with:
-          vimdoc: store.nvim
-          input: documentation.md
+          vimdoc: ${{ github.event.repository.name }}
+          pandoc: documentation.md
+          toc: true
           demojify: true
           treesitter: true
       - name: Push changes
