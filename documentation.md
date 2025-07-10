@@ -16,7 +16,7 @@ A Neovim plugin for browsing and discovering awesome Neovim plugins through an i
   "alex-popov-tech/store.nvim",
   dependencies = {
     "nvim-lua/plenary.nvim",
-    "OXY2DEV/markview.nvim",
+    "OXY2DEV/markview.nvim", -- optional, for pretty readme preview / help window
   },
   cmd = "Store",
   keys = {
