@@ -255,13 +255,13 @@ function M.new(config)
           state = "error",
           error_message = data.error,
           error_stack = data.stack,
-          readme_id = repository.full_name
+          readme_id = repository.full_name,
         })
       else
         instance.preview:render({
           state = "ready",
           content = data.body,
-          readme_id = repository.full_name
+          readme_id = repository.full_name,
         })
       end
     end)
@@ -310,7 +310,7 @@ function StoreModal:open()
       self.preview:render({
         state = "error",
         error_message = tostring(err),
-        readme_id = nil
+        readme_id = nil,
       })
       return
     end
@@ -326,7 +326,7 @@ function StoreModal:open()
       self.preview:render({
         state = "error",
         error_message = "No plugin data received from server",
-        readme_id = nil
+        readme_id = nil,
       })
       return
     end
@@ -431,7 +431,7 @@ function StoreModal:refresh()
       self.preview:render({
         state = "error",
         error_message = "Failed to refresh: " .. tostring(err),
-        readme_id = nil
+        readme_id = nil,
       })
       return
     end
@@ -449,20 +449,20 @@ function StoreModal:refresh()
       self.preview:render({
         state = "error",
         error_message = "No plugins data received during refresh",
-        readme_id = nil
+        readme_id = nil,
       })
       return
     end
 
     -- Update state with new data
     self.state.repos = data.repositories or {}
-    
+
     -- Re-apply existing filter
     self:_apply_filter()
-    
+
     -- Re-render all components
     self:_render_after_refresh()
-    
+
     logger.debug("Refresh completed successfully")
   end, true) -- true = force refresh
 end
@@ -507,9 +507,9 @@ function StoreModal:_render_after_refresh()
   -- User will need to select a repository again to see its README
   self.preview:render({
     state = "loading",
-    readme_id = nil
+    readme_id = nil,
   })
-  
+
   -- Clear current repository selection since data has changed
   self.state.current_repository = nil
 end

@@ -320,7 +320,7 @@ function PreviewWindow:render(state)
     vim.api.nvim_set_option_value("modifiable", true, { buf = self.buf_id })
     vim.api.nvim_buf_set_lines(self.buf_id, 0, -1, false, content_lines)
     vim.api.nvim_set_option_value("modifiable", false, { buf = self.buf_id })
-    
+
     if use_markview then
       local markview_ok, markview = pcall(require, "markview")
       if markview_ok then
