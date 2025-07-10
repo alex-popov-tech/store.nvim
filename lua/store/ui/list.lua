@@ -16,7 +16,7 @@ local M = {}
 ---@field topics string[]|nil Array of topic tags
 
 ---@class ListState
----@field state string current component state - "loading", "ready"
+---@field state string current component state - "loading", "ready", "error"
 ---@field repositories Repository[] List of repositories
 
 ---@class ListWindowConfig
@@ -344,6 +344,13 @@ function ListWindow:render(state)
     if state.state == "loading" then
       vim.api.nvim_set_option_value("modifiable", true, { buf = self.buf_id })
       vim.api.nvim_buf_set_lines(self.buf_id, 0, -1, false, { "Loading plugins..." })
+      vim.api.nvim_set_option_value("modifiable", false, { buf = self.buf_id })
+      return
+    end
+
+    if state.state == "error" then
+      vim.api.nvim_set_option_value("modifiable", true, { buf = self.buf_id })
+      vim.api.nvim_buf_set_lines(self.buf_id, 0, -1, false, {})
       vim.api.nvim_set_option_value("modifiable", false, { buf = self.buf_id })
       return
     end

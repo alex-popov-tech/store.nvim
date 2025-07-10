@@ -246,9 +246,19 @@ function M.new(config)
     http.get_readme(repository.full_name, function(data)
       if data.error then
         logger.error("Error fetching README for " .. repository.full_name .. ": " .. data.error)
+        instance.preview:render({
+          state = "error",
+          error_message = data.error,
+          error_stack = data.stack,
+          readme_id = repository.full_name
+        })
+      else
+        instance.preview:render({
+          state = "ready",
+          content = data.body,
+          readme_id = repository.full_name
+        })
       end
-      -- Pass repository.full_name as identifier for cursor position tracking
-      instance.preview:render(data.body, repository.full_name)
     end)
   end
   instance.preview.config.keymap = modal_keymaps
@@ -291,7 +301,12 @@ function StoreModal:open()
         filtered_count = 0,
         total_count = 0,
       })
-      self.list:render({})
+      self.list:render({ state = "error" })
+      self.preview:render({
+        state = "error",
+        error_message = tostring(err),
+        readme_id = nil
+      })
       return
     end
     if not data then
@@ -302,7 +317,12 @@ function StoreModal:open()
         filtered_count = 0,
         total_count = 0,
       })
-      self.list:render({})
+      self.list:render({ state = "error" })
+      self.preview:render({
+        state = "error",
+        error_message = "No plugin data received from server",
+        readme_id = nil
+      })
       return
     end
 

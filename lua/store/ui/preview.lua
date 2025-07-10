@@ -3,6 +3,13 @@ local logger = require("store.logger")
 
 local M = {}
 
+---@class PreviewState
+---@field state string current component state - "loading", "ready", "error"
+---@field content string[] Array of content lines
+---@field error_message string|nil Error message if state is "error"
+---@field error_stack string|nil Error stack trace if state is "error"
+---@field readme_id string|nil README identifier for cursor position tracking
+
 -- Default preview window configuration
 local DEFAULT_PREVIEW_CONFIG = {
   width = 60,
@@ -25,7 +32,6 @@ local DEFAULT_PREVIEW_CONFIG = {
 
 ---@class PreviewWindow
 ---@field config PreviewWindowConfig Window configuration
----@field markview table Markview plugin instance
 ---@field win_id number|nil Window ID
 ---@field buf_id number|nil Buffer ID
 ---@field is_open boolean Window open status
@@ -111,18 +117,11 @@ function M.new(preview_config)
     error("Preview window configuration validation failed: " .. error_msg)
   end
 
-  -- Check if markview is available - required dependency
-  local markview_ok, markview = pcall(require, "markview")
-  if not markview_ok then
-    error("markview plugin is required for preview window functionality")
-  end
-
   -- Merge with defaults
   local config = vim.tbl_deep_extend("force", DEFAULT_PREVIEW_CONFIG, preview_config or {})
 
   local instance = {
     config = config,
-    markview = markview,
     win_id = nil,
     buf_id = nil,
     is_open = false,
@@ -220,15 +219,14 @@ function PreviewWindow:open()
 
   self.is_open = true
 
-  -- Setup markview - attach and enable for this buffer
-  if not self.markview.actions then
-    error("markview.actions is not available - check markview plugin version")
+  local markview_ok, markview = pcall(require, "markview")
+  if markview_ok then
+    markview.actions.attach(self.buf_id)
+    markview.actions.enable(self.buf_id)
   end
-  self.markview.actions.attach(self.buf_id)
-  self.markview.actions.enable(self.buf_id)
 
   -- Set default content
-  self:render({ "Loading preview..." })
+  self:render({ state = "loading" })
 
   return true
 end
@@ -272,16 +270,11 @@ function PreviewWindow:_restore_cursor_position(readme_id)
   end
 end
 
----Render markdown content in the preview window
----@param content string[] Array of markdown lines
----@param readme_id string|nil Optional README identifier for cursor position tracking
-function PreviewWindow:render(content, readme_id)
-  if type(content) ~= "table" then
-    logger.warn("Preview window: Cannot render - content must be a table, got: " .. type(content))
-    return
-  end
-  if #content > 0 and type(content[1]) ~= "string" then
-    logger.warn("Preview window: Cannot render - content must be array of strings")
+---Render content in the preview window based on state
+---@param state PreviewState Preview state to render
+function PreviewWindow:render(state)
+  if type(state) ~= "table" then
+    logger.warn("Preview window: Cannot render - state must be a table, got: " .. type(state))
     return
   end
   if not self.is_open then
@@ -297,19 +290,48 @@ function PreviewWindow:render(content, readme_id)
   self:_save_cursor_position()
 
   vim.schedule(function()
-    vim.api.nvim_set_option_value("modifiable", true, { buf = self.buf_id })
-    vim.api.nvim_buf_set_lines(self.buf_id, 0, -1, false, content)
-    vim.api.nvim_set_option_value("modifiable", false, { buf = self.buf_id })
-    if not self.markview.render then
-      logger.error("Preview window: markview.render is not available - check markview plugin version")
-      return
+    local content_lines = {}
+    local use_markview = false
+
+    if state.state == "loading" then
+      content_lines = { "Loading preview..." }
+    elseif state.state == "error" then
+      content_lines = { "Error occurred while loading content:" }
+      if state.error_message then
+        table.insert(content_lines, "")
+        table.insert(content_lines, "Error: " .. state.error_message)
+      end
+      if state.error_stack then
+        table.insert(content_lines, "")
+        table.insert(content_lines, "Stack trace:")
+        -- Split stack trace by newlines if it's a multi-line string
+        local stack_lines = vim.split(state.error_stack, "\n")
+        for _, line in ipairs(stack_lines) do
+          table.insert(content_lines, line)
+        end
+      end
+    elseif state.state == "ready" and state.content then
+      content_lines = state.content
+      use_markview = true
+    else
+      content_lines = { "No content available" }
     end
-    self.markview.render(self.buf_id, { enable = true, hybrid_mode = false }, nil)
+
+    vim.api.nvim_set_option_value("modifiable", true, { buf = self.buf_id })
+    vim.api.nvim_buf_set_lines(self.buf_id, 0, -1, false, content_lines)
+    vim.api.nvim_set_option_value("modifiable", false, { buf = self.buf_id })
+    
+    if use_markview then
+      local markview_ok, markview = pcall(require, "markview")
+      if markview_ok then
+        markview.render(self.buf_id, { enable = true, hybrid_mode = false }, nil)
+      end
+    end
 
     -- Update current README ID and restore cursor position
-    self.current_readme_id = readme_id
-    if readme_id then
-      self:_restore_cursor_position(readme_id)
+    self.current_readme_id = state.readme_id
+    if state.readme_id then
+      self:_restore_cursor_position(state.readme_id)
     end
   end)
 end
@@ -348,9 +370,9 @@ function PreviewWindow:close()
     return false
   end
 
-  -- Cleanup markview
-  if self.buf_id and self.markview.actions then
-    self.markview.actions.detach(self.buf_id)
+  local markview_ok, markview = pcall(require, "markview")
+  if self.buf_id and markview_ok then
+    markview.actions.detach(self.buf_id)
   end
 
   -- Close window

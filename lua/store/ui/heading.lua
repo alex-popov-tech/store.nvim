@@ -245,6 +245,8 @@ function HeadingWindow:render(data)
     local count_text = ""
     if data.state == "loading" then
       count_text = "Loading plugins..."
+    elseif data.state == "error" then
+      count_text = "Unrecoverable error occurred, check preview window for details"
     else
       count_text = string.format("Showing %d of %d plugins", data.filtered_count, data.total_count)
     end
