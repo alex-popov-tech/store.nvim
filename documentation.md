@@ -7,7 +7,7 @@ A Neovim plugin for browsing and discovering awesome Neovim plugins through an i
 - **Interactive Modal Interface**: Clean UI with header, list, and preview panes
 - **Live README Preview**: Real-time markdown rendering with syntax highlighting
 - **Smart Filtering**: Filter plugins by name with instant search ( TBD filtering by category and tags )
-- **Intelligent Caching**: 24-hour cache with automatic staleness detection
+- **Intelligent Caching**: 24-hour cache with automatic staleness detection and manual refresh
 
 ## Installation
 
@@ -15,7 +15,6 @@ A Neovim plugin for browsing and discovering awesome Neovim plugins through an i
 {
   "alex-popov-tech/store.nvim",
   dependencies = {
-    "nvim-lua/plenary.nvim",
     "OXY2DEV/markview.nvim", -- optional, for pretty readme preview / help window
   },
   cmd = "Store",
@@ -23,7 +22,7 @@ A Neovim plugin for browsing and discovering awesome Neovim plugins through an i
     { "<leader>s", "<cmd>Store<cr>", desc = "Open Plugin Store" },
   },
   opts = {
-    -- Your configuration here
+    -- optional configuration here
   },
 }
 ```
@@ -107,11 +106,9 @@ Opens the store modal interface.
 | `?` | Help | Show help modal |
 | `q` | Close | Close the store modal |
 | `f` | Filter | Open filter input |
-| `r` | Refresh | Refresh plugin data |
+| `r` | Refresh | Hard reset caches and refresh all data from network |
 | `<CR>` | Open | Open repository in browser |
 | `<Tab>` | Switch Focus | Switch between panes |
-| `j`/`k` | Navigate | Move up/down in list |
-| `gg`/`G` | Navigate | Jump to top/bottom |
 
 ### Filter Mode
 
@@ -137,10 +134,7 @@ require("store").setup({
   proportions = {
     list = 0.4,    -- 40% for list
     preview = 0.6, -- 60% for preview
-  },
-  modal = {
-    border = "double",
-  },
+  }
 })
 ```
 
