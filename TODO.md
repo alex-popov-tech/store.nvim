@@ -93,6 +93,12 @@
   - ✅ File system operations with `plenary.path` (`lua/store/cache.lua:1`)
   - ✅ Consistent dependency usage across test and runtime
 
+- [ ] **27. Preheat file cache on startup for instant modal response**
+  - Background cache warming when plugin loads
+  - Async fetch of plugin database and popular READMEs
+  - Modal opens with all data already in memory
+  - Improves user experience with instant UI response
+
 ### Documentation & CI/CD
 - [x] **13. Document with API documentation all methods and classes, make vim doc, and README**
   - ✅ Comprehensive README with installation, usage, and API reference
