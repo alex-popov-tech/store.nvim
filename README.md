@@ -1,8 +1,5 @@
 <img alt="store.nvim heading image" src="https://github.com/user-attachments/assets/f42b94e4-e3b0-44dc-a8b3-ca59f0817d17" />
-
-## Demo
-
-[![asciicast](https://asciinema.org/a/k63PQk4ed5UakDeYYKlqYBbkx.svg)](https://asciinema.org/a/k64PQk4ed5UakDeYYKlqYBbkx?t=4)
+<img alt="store.nvim ui" src="https://github.com/user-attachments/assets/29ababaf-6027-4646-ab30-ce253691d72d" />
 
 A Neovim plugin for browsing and discovering awesome Neovim plugins through an intuitive UI modal interface.
 
