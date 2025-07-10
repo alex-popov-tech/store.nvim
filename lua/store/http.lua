@@ -74,12 +74,15 @@ end
 
 ---Fetch plugins from the gist URL, with caching support
 ---@param callback fun(data: PluginsData|nil, error: string|nil) Callback function with plugins data or error
-function M.fetch_plugins(callback)
-  -- Check cache first (now includes memory + file internally)
-  local cached_data, is_valid = cache.list_plugins()
-  if is_valid then
-    callback(cached_data, nil)
-    return
+---@param force_refresh? boolean Optional flag to bypass cache and force network request
+function M.fetch_plugins(callback, force_refresh)
+  -- Check cache first unless force refresh is requested
+  if not force_refresh then
+    local cached_data, is_valid = cache.list_plugins()
+    if is_valid then
+      callback(cached_data, nil)
+      return
+    end
   end
 
   -- Fallback to network request
@@ -112,18 +115,21 @@ end
 ---Get README content for a repository, with caching support
 ---@param repo_path string Repository path in format 'owner/repo'
 ---@param callback fun(result: ReadmeResult) Callback function with README result (either body or error)
-function M.get_readme(repo_path, callback)
+---@param force_refresh? boolean Optional flag to bypass cache and force network request
+function M.get_readme(repo_path, callback, force_refresh)
   if not repo_path or not repo_path:match("^[^/]+/[^/]+$") then
     callback({ error = "Invalid repository path format. Expected 'owner/repo'" })
     return
   end
 
-  -- Check cache first (now includes memory + file internally)
+  -- Check cache first unless force refresh is requested
   local plugin_url = "https://github.com/" .. repo_path
-  local cached_readme, is_valid = cache.get_readme(plugin_url)
-  if is_valid then
-    callback({ body = cached_readme })
-    return
+  if not force_refresh then
+    local cached_readme, is_valid = cache.get_readme(plugin_url)
+    if is_valid then
+      callback({ body = cached_readme })
+      return
+    end
   end
 
   -- Fallback to async network request

@@ -322,4 +322,77 @@ function M.list_plugins()
   end
 end
 
+---Clear all in-memory caches
+function M.clear_memory_cache()
+  logger.debug("Clearing memory cache")
+  readmes_memory_cache = {}
+  plugins_memory_cache = {
+    content = { crawled_at = "", total_repositories = 0, repositories = {} },
+    timestamp = 0,
+  }
+end
+
+---Clear all file caches
+function M.clear_file_cache()
+  logger.debug("Clearing file cache")
+  local cache_dir = get_cache_dir()
+  
+  if not cache_dir:exists() then
+    logger.debug("Cache directory doesn't exist, nothing to clear")
+    return true
+  end
+  
+  local success = true
+  
+  -- Delete plugins.json file
+  local plugins_file = cache_dir / "plugins.json"
+  if plugins_file:exists() then
+    local ok, err = pcall(function() plugins_file:rm() end)
+    if not ok then
+      logger.warn("Failed to delete plugins cache file: " .. tostring(err))
+      success = false
+    end
+  end
+  
+  -- Delete readmes.json file
+  local readmes_file = cache_dir / "readmes.json"
+  if readmes_file:exists() then
+    local ok, err = pcall(function() readmes_file:rm() end)
+    if not ok then
+      logger.warn("Failed to delete readmes mapping file: " .. tostring(err))
+      success = false
+    end
+  end
+  
+  -- Delete all README files
+  local readme_pattern = cache_dir / "readme-*.md"
+  local readme_files = vim.fn.glob(readme_pattern:absolute(), false, true)
+  for _, file_path in ipairs(readme_files) do
+    local readme_file = Path:new(file_path)
+    local ok, err = pcall(function() readme_file:rm() end)
+    if not ok then
+      logger.warn("Failed to delete README cache file " .. file_path .. ": " .. tostring(err))
+      success = false
+    end
+  end
+  
+  return success
+end
+
+---Clear all caches (memory + file)
+---@return boolean success True if all caches were cleared successfully
+function M.clear_all_caches()
+  logger.debug("Clearing all caches")
+  M.clear_memory_cache()
+  local file_success = M.clear_file_cache()
+  
+  if file_success then
+    logger.debug("All caches cleared successfully")
+  else
+    logger.warn("Some cache files could not be cleared")
+  end
+  
+  return file_success
+end
+
 return M

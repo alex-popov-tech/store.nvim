@@ -1,4 +1,5 @@
 local http = require("store.http")
+local cache = require("store.cache")
 local validators = require("store.validators")
 local utils = require("store.utils")
 local heading = require("store.ui.heading")
@@ -111,6 +112,7 @@ function M.new(config)
       filtered_repos = {},
       current_focus = "list", -- Track current focused component: "list" or "preview"
       current_repository = nil, -- Track currently selected repository
+      is_refreshing = false, -- Track refresh state to prevent concurrent refreshes
     },
 
     -- UI component instances (ready for rendering)
@@ -222,6 +224,9 @@ function M.new(config)
     [config.keybindings.help] = function()
       local help = require("store.ui.help")
       help.open()
+    end,
+    [config.keybindings.refresh] = function()
+      instance:refresh()
     end,
     [config.keybindings.open] = function()
       if instance.state.current_repository and instance.state.current_repository.html_url then
@@ -382,6 +387,131 @@ function StoreModal:close()
   logger.debug("StoreModal closed successfully")
 
   return true
+end
+
+---Refresh the modal by clearing caches and refetching data
+---@return nil
+function StoreModal:refresh()
+  if self.state.is_refreshing then
+    logger.debug("Refresh already in progress, ignoring")
+    return
+  end
+
+  logger.debug("Starting refresh")
+  self.state.is_refreshing = true
+
+  -- Show refreshing state in header
+  self.heading:render({
+    query = self.state.filter_query,
+    state = "loading",
+    filtered_count = 0,
+    total_count = 0,
+  })
+
+  -- Clear all caches
+  local cache_cleared = cache.clear_all_caches()
+  if not cache_cleared then
+    logger.warn("Some cache files could not be cleared during refresh")
+  end
+
+  -- Force refresh plugins data
+  http.fetch_plugins(function(data, err)
+    self.state.is_refreshing = false
+
+    if err then
+      logger.error("Failed to refresh plugins data: " .. tostring(err))
+      -- Show error state
+      self.heading:render({
+        query = self.state.filter_query,
+        state = "error",
+        filtered_count = 0,
+        total_count = 0,
+      })
+      self.list:render({ state = "error" })
+      self.preview:render({
+        state = "error",
+        error_message = "Failed to refresh: " .. tostring(err),
+        readme_id = nil
+      })
+      return
+    end
+
+    if not data then
+      logger.error("No plugins data received during refresh")
+      -- Show error state
+      self.heading:render({
+        query = self.state.filter_query,
+        state = "error",
+        filtered_count = 0,
+        total_count = 0,
+      })
+      self.list:render({ state = "error" })
+      self.preview:render({
+        state = "error",
+        error_message = "No plugins data received during refresh",
+        readme_id = nil
+      })
+      return
+    end
+
+    -- Update state with new data
+    self.state.repos = data.repositories or {}
+    
+    -- Re-apply existing filter
+    self:_apply_filter()
+    
+    -- Re-render all components
+    self:_render_after_refresh()
+    
+    logger.debug("Refresh completed successfully")
+  end, true) -- true = force refresh
+end
+
+---Apply current filter query to repositories
+---@return nil
+function StoreModal:_apply_filter()
+  if self.state.filter_query == "" then
+    self.state.filtered_repos = self.state.repos
+  else
+    local query_lower = self.state.filter_query:lower()
+    self.state.filtered_repos = {}
+    for _, repo in ipairs(self.state.repos) do
+      if
+        repo.full_name:lower():find(query_lower)
+        or (repo.description and repo.description:lower():find(query_lower))
+      then
+        table.insert(self.state.filtered_repos, repo)
+      end
+    end
+  end
+end
+
+---Re-render all components after refresh
+---@return nil
+function StoreModal:_render_after_refresh()
+  -- Re-render heading with new stats
+  self.heading:render({
+    query = self.state.filter_query,
+    state = "ready",
+    filtered_count = #self.state.filtered_repos,
+    total_count = #self.state.repos,
+  })
+
+  -- Re-render list with filtered results
+  self.list:render({
+    state = "ready",
+    repositories = self.state.filtered_repos,
+  })
+
+  -- Clear preview since repository data has changed
+  -- User will need to select a repository again to see its README
+  self.preview:render({
+    state = "loading",
+    readme_id = nil
+  })
+  
+  -- Clear current repository selection since data has changed
+  self.state.current_repository = nil
 end
 
 return M
