@@ -33,10 +33,10 @@ local util, parse = {}, {}
 
 -- Helpers --------------------------------------------------
 -------------------------------------------------------------
-local F = require "plenary.functional"
-local J = require "plenary.job"
-local P = require "plenary.path"
-local compat = require "plenary.compat"
+local F = require("plenary.functional")
+local J = require("plenary.job")
+local P = require("plenary.path")
+local compat = require("plenary.compat")
 
 -- Utils ----------------------------------------------------
 -------------------------------------------------------------
@@ -76,9 +76,9 @@ util.gen_dump_path = function()
     return string.format("%x", v)
   end)
   if P.path.sep == "\\" then
-    path = string.format("%s\\AppData\\Local\\Temp\\plenary_curl_%s.headers", os.getenv "USERPROFILE", id)
+    path = string.format("%s\\AppData\\Local\\Temp\\plenary_curl_%s.headers", os.getenv("USERPROFILE"), id)
   else
-    local temp_dir = os.getenv "XDG_RUNTIME_DIR" or "/tmp"
+    local temp_dir = os.getenv("XDG_RUNTIME_DIR") or "/tmp"
     path = temp_dir .. "/plenary_curl_" .. id .. ".headers"
   end
   return { "-D", path }
@@ -172,7 +172,7 @@ parse.url = function(xs, q)
   if type(xs) == "string" then
     return q and xs .. "?" .. q or xs
   elseif type(xs) == "table" then
-    error "Low level URL definition is not supported."
+    error("Low level URL definition is not supported.")
   end
 end
 
@@ -192,7 +192,7 @@ parse.http_version = function(s)
     s = s:gsub("/", "")
     return { "--" .. s }
   else
-    error "Unknown HTTP version."
+    error("Unknown HTTP version.")
   end
 end
 
@@ -256,7 +256,7 @@ parse.response = function(lines, dump_path, code)
 
   -- Process headers in a single pass
   for _, line in ipairs(headers) do
-    local status_match = line:match "^HTTP/%S*%s+(%d+)"
+    local status_match = line:match("^HTTP/%S*%s+(%d+)")
     if status_match then
       status = tonumber(status_match)
     elseif line ~= "" then
@@ -301,11 +301,11 @@ local request = function(specs)
       local stderr = vim.inspect(j:stderr_result())
       local message = string.format("%s %s - curl error exit_code=%s stderr=%s", opts.method, opts.url, code, stderr)
       if opts.on_error then
-        return opts.on_error {
+        return opts.on_error({
           message = message,
           stderr = stderr,
           exit = code,
-        }
+        })
       else
         error(message)
       end
@@ -348,12 +348,12 @@ return (function()
     end
   end
   return {
-    get = partial "get",
-    post = partial "post",
-    put = partial "put",
-    head = partial "head",
-    patch = partial "patch",
-    delete = partial "delete",
-    request = partial "request",
+    get = partial("get"),
+    post = partial("post"),
+    put = partial("put"),
+    head = partial("head"),
+    patch = partial("patch"),
+    delete = partial("delete"),
+    request = partial("request"),
   }
 end)()

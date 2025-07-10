@@ -3,10 +3,10 @@
 --- Goal: Create objects that are extremely similar to Python's `Path` Objects.
 --- Reference: https://docs.python.org/3/library/pathlib.html
 
-local bit = require "plenary.bit"
+local bit = require("plenary.bit")
 local uv = vim.loop
 
-local F = require "plenary.functional"
+local F = require("plenary.functional")
 
 local S_IF = {
   -- S_IFDIR  = 0o040000  # directory
@@ -181,7 +181,7 @@ Path.__index = function(t, k)
   end
 
   if k == "_cwd" then
-    local cwd = uv.fs_realpath "."
+    local cwd = uv.fs_realpath(".")
     t._cwd = cwd
     return cwd
   end
@@ -336,7 +336,7 @@ function Path:expand()
   else
     expanded = self.filename
   end
-  return expanded and expanded or error "Path not valid"
+  return expanded and expanded or error("Path not valid")
 end
 
 function Path:make_relative(cwd)
@@ -436,11 +436,11 @@ local shorten = (function()
   end
 
   if jit and path.sep ~= "\\" then
-    local ffi = require "ffi"
-    ffi.cdef [[
+    local ffi = require("ffi")
+    ffi.cdef([[
     typedef unsigned char char_u;
     void shorten_dir(char_u *str);
-    ]]
+    ]])
     local ffi_func = function(filename)
       if not filename or is_uri(filename) then
         return filename
@@ -508,7 +508,7 @@ function Path:mkdir(opts)
         end
       end
     else
-      error "FileNotFoundError"
+      error("FileNotFoundError")
     end
   end
 
@@ -526,11 +526,11 @@ end
 function Path:rename(opts)
   opts = opts or {}
   if not opts.new_name or opts.new_name == "" then
-    error "Please provide the new name!"
+    error("Please provide the new name!")
   end
 
   -- handles `.`, `..`, `./`, and `../`
-  if opts.new_name:match "^%.%.?/?\\?.+" then
+  if opts.new_name:match("^%.%.?/?\\?.+") then
     opts.new_name = {
       uv.fs_realpath(opts.new_name:sub(1, 3)),
       opts.new_name:sub(4, #opts.new_name),
@@ -540,7 +540,7 @@ function Path:rename(opts)
   local new_path = Path:new(opts.new_name)
 
   if new_path:exists() then
-    error "File or directory already exists!"
+    error("File or directory already exists!")
   end
 
   local status = uv.fs_rename(self:absolute(), new_path:absolute())
@@ -568,7 +568,7 @@ function Path:copy(opts)
   local dest = opts.destination
   -- handles `.`, `..`, `./`, and `../`
   if not Path.is_path(dest) then
-    if type(dest) == "string" and dest:match "^%.%.?/?\\?.+" then
+    if type(dest) == "string" and dest:match("^%.%.?/?\\?.+") then
       dest = {
         uv.fs_realpath(dest:sub(1, 3)),
         dest:sub(4, #dest),
@@ -595,11 +595,11 @@ function Path:copy(opts)
   end
   -- dir
   if opts.recursive then
-    dest:mkdir {
+    dest:mkdir({
       parents = F.if_nil(opts.parents, false, opts.parents),
       exists_ok = F.if_nil(opts.exists_ok, true, opts.exists_ok),
-    }
-    local scan = require "plenary.scandir"
+    })
+    local scan = require("plenary.scandir")
     local data = scan.scan_dir(self.filename, {
       respect_gitignore = F.if_nil(opts.respect_gitignore, false, opts.respect_gitignore),
       hidden = F.if_nil(opts.hidden, true, opts.hidden),
@@ -635,7 +635,7 @@ function Path:touch(opts)
   end
 
   if parents then
-    Path:new(self:parent()):mkdir { parents = true }
+    Path:new(self:parent()):mkdir({ parents = true })
   end
 
   local fd = uv.fs_open(self:_fs_filename(), "w", mode)
@@ -652,7 +652,7 @@ function Path:rm(opts)
 
   local recursive = F.if_nil(opts.recursive, false, opts.recursive)
   if recursive then
-    local scan = require "plenary.scandir"
+    local scan = require("plenary.scandir")
     local abs = self:absolute()
 
     -- first unlink all files
@@ -761,7 +761,7 @@ function Path:_read_async(callback)
     vim.loop.fs_fstat(fd, function(err_fstat, stat)
       assert(not err_fstat, err_fstat)
       if stat.type ~= "file" then
-        return callback ""
+        return callback("")
       end
       vim.loop.fs_read(fd, stat.size, 0, function(err_read, data)
         assert(not err_read, err_read)
@@ -802,7 +802,7 @@ function Path:head(lines)
     local read_chunk = assert(uv.fs_read(fd, chunk_size, index))
 
     local i = 0
-    for char in read_chunk:gmatch "." do
+    for char in read_chunk:gmatch(".") do
       if char == "\n" then
         count = count + 1
         if count >= lines then

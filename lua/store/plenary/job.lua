@@ -1,8 +1,8 @@
 local vim = vim
 local uv = vim.loop
-local compat = require "plenary.compat"
+local compat = require("plenary.compat")
 
-local F = require "plenary.functional"
+local F = require("plenary.functional")
 
 ---@class Job
 ---@field command string Command to run
@@ -82,7 +82,7 @@ end
 ---@return Job
 function Job:new(o)
   if not o then
-    error(debug.traceback "Options are required for Job:new")
+    error(debug.traceback("Options are required for Job:new"))
   end
 
   local command = o.command
@@ -90,10 +90,10 @@ function Job:new(o)
     if o[1] then
       command = o[1]
     else
-      error(debug.traceback "'command' is required for Job:new")
+      error(debug.traceback("'command' is required for Job:new"))
     end
   elseif o[1] then
-    error(debug.traceback "Cannot pass both 'command' and array args")
+    error(debug.traceback("Cannot pass both 'command' and array args"))
   end
 
   local args = o.args
@@ -115,7 +115,7 @@ function Job:new(o)
   obj._raw_cwd = o.cwd
   if o.env then
     if type(o.env) ~= "table" then
-      error "[plenary.job] env has to be a table"
+      error("[plenary.job] env has to be a table")
     end
 
     local transform = {}
@@ -148,7 +148,7 @@ function Job:new(o)
     F.if_nil(F.if_nil(o.enable_recording, o.enable_handlers, o.enable_recording), true, o.enable_recording)
 
   if not obj.enable_handlers and obj.enable_recording then
-    error "[plenary.job] Cannot record items but disable handlers"
+    error("[plenary.job] Cannot record items but disable handlers")
   end
 
   obj._user_on_start = o.on_start
@@ -173,7 +173,7 @@ function Job:_reset()
   self.is_shutdown = nil
 
   if self._shutdown_check and uv.is_active(self._shutdown_check) and not uv.is_closing(self._shutdown_check) then
-    vim.api.nvim_err_writeln(debug.traceback "We may be memory leaking here. Please report to TJ.")
+    vim.api.nvim_err_writeln(debug.traceback("We may be memory leaking here. Please report to TJ."))
   end
   self._shutdown_check = uv.new_check()
 
@@ -202,7 +202,7 @@ function Job:_stop()
 end
 
 function Job:_pipes_are_closed(options)
-  for _, pipe in ipairs { options.stdin, options.stdout, options.stderr } do
+  for _, pipe in ipairs({ options.stdin, options.stdout, options.stderr }) do
     if pipe and not uv.is_closing(pipe) then
       return false
     end
@@ -422,7 +422,7 @@ function Job:_execute()
       for i, v in ipairs(self.writer) do
         self.stdin:write(v)
         if i ~= writer_len then
-          self.stdin:write "\n"
+          self.stdin:write("\n")
         else
           self.stdin:write("\n", function()
             pcall(self.stdin.close, self.stdin)
@@ -486,7 +486,7 @@ function Job:wait(timeout, wait_interval, should_redraw)
   -- Wait five seconds, or until timeout.
   local wait_result = vim.wait(timeout, function()
     if should_redraw then
-      vim.cmd [[redraw!]]
+      vim.cmd([[redraw!]])
     end
 
     if self.is_shutdown then
@@ -669,7 +669,7 @@ end
 --- Send data to a job.
 function Job:send(data)
   if not self.stdin then
-    error "job has no 'stdin'. Have you run `job:start()` yet?"
+    error("job has no 'stdin'. Have you run `job:start()` yet?")
   end
 
   self.stdin:write(data)
