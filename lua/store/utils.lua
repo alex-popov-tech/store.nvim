@@ -108,36 +108,25 @@ end
 
 ---Open a URL in the default browser (cross-platform)
 ---@param url string URL to open
----@return boolean Success status
 function M.open_url(url)
+  local logger = require("store.logger")
+
   if not url or type(url) ~= "string" then
-    return false
+    logger.error("Invalid URL: must be a non-empty string")
+    return
   end
 
   -- Validate URL format for security
   if not url:match("^https?://[%w%-%.%_%~%:/%?%#%[%]%@%!%$%&%'%(%)%*%+%,%;%=]+$") then
-    return false
+    logger.error("Invalid URL format: " .. url)
+    return
   end
 
-  local cmd
-  if vim.fn.has("mac") == 1 then
-    cmd = "open"
-  elseif vim.fn.has("unix") == 1 then
-    cmd = "xdg-open"
-  elseif vim.fn.has("win32") == 1 then
-    cmd = "start"
+  -- Use vim.ui.open for cross-platform URL opening (Neovim 0.10+)
+  if vim.ui.open then
+    vim.ui.open(url)
   else
-    return false
-  end
-
-  -- Use vim.system for better security (Neovim 0.10+)
-  if vim.system then
-    local result = vim.system({ cmd, url }, { text = true }):wait()
-    return result.code == 0
-  else
-    -- Fallback for older Neovim versions
-    local success = vim.fn.system(cmd .. " " .. vim.fn.shellescape(url))
-    return vim.v.shell_error == 0
+    logger.error("vim.ui.open not available - please update to Neovim 0.10+")
   end
 end
 
