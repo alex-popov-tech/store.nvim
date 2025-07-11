@@ -151,6 +151,18 @@
   - Implement source-specific crawlers and parsers
   - Merge and deduplicate plugins from multiple sources
 
+- [ ] **28. Make filtering use custom structure for unified search**
+  - Implement syntax like 'tags:one,two,three category:lsp' in filter input
+  - Enable searching across descriptions, categories, and tags in same field
+  - Parse filter input to extract different search criteria
+  - Apply multiple filters simultaneously for more precise results
+
+- [ ] **29. Track 'new' plugins introduced recently**
+  - Implement system to identify recently added plugins
+  - Add timestamp tracking for plugin discovery
+  - Display "NEW" indicators for recently introduced plugins
+  - Configure time threshold for what constitutes "new" plugins
+
 ---
 
 ## 🔮 Future Enhancement Ideas (Optional)
