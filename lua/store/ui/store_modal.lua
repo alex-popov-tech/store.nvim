@@ -6,6 +6,7 @@ local heading = require("store.ui.heading")
 local list = require("store.ui.list")
 local preview = require("store.ui.preview")
 local logger = require("store.logger")
+local WindowManager = require("store.ui.window_manager")
 
 local M = {}
 
@@ -106,6 +107,7 @@ function M.new(config)
     config = config,
     layout = config.computed_layout,
     is_open = false,
+    window_manager = WindowManager:new(),
     state = {
       filter_query = "",
       repos = {},
@@ -291,6 +293,11 @@ function StoreModal:open()
   self.preview:open()
   self.is_open = true
 
+  -- Register all windows with the window manager for coordinated closing
+  self.window_manager:register_window(self.heading.win_id, "heading")
+  self.window_manager:register_window(self.list.win_id, "list")
+  self.window_manager:register_window(self.preview.win_id, "preview")
+
   logger.debug("StoreModal components opened successfully")
 
   -- Focus the list component by default
@@ -363,6 +370,9 @@ function StoreModal:close()
   end
 
   logger.debug("Closing StoreModal")
+
+  -- Clean up window manager first
+  self.window_manager:cleanup()
 
   -- Save cursor position before closing
   if self.preview then
