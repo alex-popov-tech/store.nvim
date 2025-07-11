@@ -163,6 +163,35 @@
   - Display "NEW" indicators for recently introduced plugins
   - Configure time threshold for what constitutes "new" plugins
 
+- [ ] **30. Display plugin last updated time in GitHub-style format**
+  - Show relative time stamps like "2 days ago", "6 hours ago", "yesterday", "3 weeks ago"
+  - Use GitHub's `updated_at` field from repository API data
+  - Format timestamps in human-readable relative format
+  - Display in plugin list alongside stars/forks/watchers for activity overview
+
+- [ ] **31. Add sandboxed plugin installation for testing** ( needs investigation, efforts required )
+  - Create `store.nvim.sandbox.lua` file for temporary plugin loading
+  - Source sandbox file synchronously in init.lua for testing purposes
+  - Allow users to "try before install" plugins without permanent changes
+  - Investigate technical approach for safe plugin sandboxing
+  - Implement cleanup mechanism to remove sandbox plugins after testing
+  - Add keybinding to toggle sandbox mode for selected plugin
+
+- [ ] **32. Reach out to Dotfyle for plugin database collaboration**
+  - Contact https://github.com/codicocodes/dotfyle team about sharing their plugin database
+  - Request access to their plugin data in structured format (JSON/API)
+  - Explore integration possibilities for richer plugin metadata
+  - Investigate combining awesome-neovim data with Dotfyle's curated collection
+  - Potentially access user ratings, categories, and usage statistics from Dotfyle
+
+- [ ] **33. Add 'newly posted' plugins view similar to lazy.nvim updates**
+  - Create dedicated view/tab showing recently added plugins to the database
+  - Display plugins discovered in the last week/month with timestamps
+  - Show diff-style interface highlighting new additions since last check
+  - Add notification system for new plugins matching user's interests
+  - Implement lazy.nvim-style update interface with expandable plugin details
+  - Allow users to mark plugins as "seen" to track what's new for them
+
 ---
 
 ## 🔮 Future Enhancement Ideas (Optional)
