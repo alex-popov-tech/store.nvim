@@ -107,7 +107,7 @@ function M.new(config)
     config = config,
     layout = config.computed_layout,
     is_open = false,
-    window_manager = WindowManager:new(),
+    window_manager = nil, -- Will be set after instance is created
     state = {
       filter_query = "",
       repos = {},
@@ -274,6 +274,15 @@ function M.new(config)
   instance.list.buf_id = instance.list:_create_buffer()
   instance.preview.buf_id = instance.preview:_create_buffer()
 
+  -- Create WindowManager after instance is fully constructed
+  instance.window_manager = WindowManager:new(function()
+    -- Modal-level cleanup: reset state and call on_close callback
+    instance.is_open = false
+    if config.on_close then
+      config.on_close()
+    end
+  end)
+
   setmetatable(instance, StoreModal)
   return instance
 end
@@ -293,10 +302,16 @@ function StoreModal:open()
   self.preview:open()
   self.is_open = true
 
-  -- Register all windows with the window manager for coordinated closing
-  self.window_manager:register_window(self.heading.win_id, "heading")
-  self.window_manager:register_window(self.list.win_id, "list")
-  self.window_manager:register_window(self.preview.win_id, "preview")
+  -- Register all components with the window manager for coordinated closing
+  self.window_manager:register_component(self.heading.win_id, function()
+    self.heading:close()
+  end, "heading")
+  self.window_manager:register_component(self.list.win_id, function()
+    self.list:close()
+  end, "list")
+  self.window_manager:register_component(self.preview.win_id, function()
+    self.preview:close()
+  end, "preview")
 
   logger.debug("StoreModal components opened successfully")
 

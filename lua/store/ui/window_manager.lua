@@ -1,30 +1,37 @@
 local WindowManager = {}
 
 ---@class WindowManager
----@field windows table<number, string> Map of window IDs to component names
+---@field components table<number, {close: function, name: string}> Map of window IDs to component close methods
 ---@field augroup number Autocmd group ID for cleanup
 ---@field is_closing boolean Flag to prevent recursive closing
+---@field on_modal_cleanup function|nil Callback for modal-level cleanup
 
 ---Create a new WindowManager instance
+---@param on_modal_cleanup function|nil Optional callback for modal-level cleanup
 ---@return WindowManager
-function WindowManager:new()
+function WindowManager:new(on_modal_cleanup)
   local instance = {
-    windows = {},
+    components = {},
     augroup = vim.api.nvim_create_augroup("StoreWindowManager", { clear = true }),
     is_closing = false,
+    on_modal_cleanup = on_modal_cleanup,
   }
   return setmetatable(instance, { __index = self })
 end
 
----Register a window for coordinated closing
----@param win_id number Window ID to register
----@param component_name string Name of the component (for debugging)
-function WindowManager:register_window(win_id, component_name)
+---Register a component for coordinated closing
+---@param win_id number Window ID to monitor
+---@param close_fn function Component's close method
+---@param component_name string Name of the component (for logging)
+function WindowManager:register_component(win_id, close_fn, component_name)
   if not win_id or not vim.api.nvim_win_is_valid(win_id) then
     return
   end
 
-  self.windows[win_id] = component_name
+  self.components[win_id] = {
+    close = close_fn,
+    name = component_name,
+  }
 
   -- Set up WinClosed autocmd for this window
   vim.api.nvim_create_autocmd("WinClosed", {
@@ -32,28 +39,42 @@ function WindowManager:register_window(win_id, component_name)
     once = true,
     pattern = tostring(win_id),
     callback = function()
-      self:close_all_windows(win_id)
+      self:on_window_closed()
     end,
   })
 end
 
----Close all registered windows when one is closed
----@param closed_win_id number The window ID that was closed
-function WindowManager:close_all_windows(closed_win_id)
+---Handle when any monitored window is closed
+function WindowManager:on_window_closed()
   if self.is_closing then
     return
   end
 
   self.is_closing = true
 
-  -- Close all other registered windows
-  for win_id, component_name in pairs(self.windows) do
-    if win_id ~= closed_win_id and vim.api.nvim_win_is_valid(win_id) then
-      vim.api.nvim_win_close(win_id, true)
+  local logger = require("store.logger")
+  logger.debug("Window closed, initiating graceful shutdown")
+
+  -- Close all components with individual error handling
+  for win_id, component in pairs(self.components) do
+    local success, err = pcall(component.close)
+    if not success then
+      logger.error("Failed to close component " .. component.name .. ": " .. tostring(err))
+    else
+      logger.debug("Successfully closed component: " .. component.name)
     end
   end
 
-  -- Clean up and reset
+  -- Call modal-level cleanup if provided
+  if self.on_modal_cleanup then
+    local success, err = pcall(self.on_modal_cleanup)
+    if not success then
+      logger.error("Failed modal cleanup: " .. tostring(err))
+    else
+      logger.debug("Modal cleanup completed successfully")
+    end
+  end
+
   self:cleanup()
 end
 
@@ -62,7 +83,7 @@ function WindowManager:cleanup()
   if self.augroup then
     vim.api.nvim_del_augroup_by_id(self.augroup)
   end
-  self.windows = {}
+  self.components = {}
   self.is_closing = false
 end
 
