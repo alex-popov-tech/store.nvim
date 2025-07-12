@@ -198,6 +198,7 @@ function ListWindow:_create_buffer()
       buffer = buf_id,
       silent = true,
       desc = "Store.nvim list window: " .. lhs,
+      nowait = true,
     })
   end
 
