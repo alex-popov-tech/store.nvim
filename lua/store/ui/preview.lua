@@ -162,6 +162,7 @@ function PreviewWindow:_create_buffer()
       buffer = buf_id,
       silent = true,
       desc = "Store.nvim preview window: " .. lhs,
+      nowait = true,
     })
   end
 
