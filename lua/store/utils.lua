@@ -25,7 +25,7 @@ function M.format_line(width, left, right)
     -- Content is too long for the width, truncate right content
     local max_right_length = usable_width - #left - min_spacing
     if max_right_length > 0 then
-      local truncated_right = string.sub(right, 1, max_right_length - 3) .. "..."
+      local truncated_right = string.sub(right, 1, max_right_length - 1) .. "…"
       return left .. string.rep(" ", min_spacing) .. truncated_right .. string.rep(" ", right_padding)
     else
       -- Even left content is too long, just return left content truncated
@@ -75,7 +75,7 @@ function M.format_line_priority_right(width, left, right)
       while vim.fn.strdisplaywidth(truncated_left) + 3 > max_left_width and #truncated_left > 0 do
         truncated_left = string.sub(truncated_left, 1, #truncated_left - 1)
       end
-      truncated_left = truncated_left .. "..."
+      truncated_left = truncated_left .. "…"
       return truncated_left .. string.rep(" ", min_spacing) .. right
     else
       -- Not enough space for meaningful left content, just show right
