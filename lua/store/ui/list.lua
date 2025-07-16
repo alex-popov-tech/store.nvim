@@ -5,19 +5,23 @@ local logger = require("store.logger")
 local M = {}
 
 ---@class Repository
----@field full_name string Repository full name (owner/repo)
----@field description string|nil Repository description
----@field homepage string|nil Repository homepage URL
+---@field author string Repository author/owner
+---@field name string Repository name
+---@field full_name string Repository full name (author/name)
+---@field description string Repository description
+---@field homepage string Repository homepage URL
 ---@field html_url string Repository GitHub URL
----@field stargazers_count number|nil Number of stars
----@field watchers_count number|nil Number of watchers
----@field fork_count number|nil Number of forks
----@field updated_at string|nil Last updated timestamp
----@field topics string[]|nil Array of topic tags
+---@field tags string[] Array of topic tags
+---@field stargazers_count number Raw star count for sorting
+---@field pushed_at number Unix timestamp of last push for sorting
+---@field pretty_stargazers_count string Formatted number of stars
+---@field pretty_forks_count string Formatted number of forks
+---@field pretty_open_issues_count string Formatted number of open issues
+---@field pretty_pushed_at string Formatted last push time
 
 ---@class ListState
 ---@field state string current component state - "loading", "ready", "error"
----@field repositories Repository[] List of repositories
+---@field items Repository[] List of repositories
 
 ---@class ListWindowConfig
 ---@field width number Window width
@@ -29,6 +33,8 @@ local M = {}
 ---@field on_repo fun(repository: Repository) Callback when cursor moves over repository
 ---@field keymap table<string, function> Table of keybinding to callback mappings
 ---@field cursor_debounce_delay number Debounce delay for cursor movement in milliseconds
+---@field max_lengths { full_name: number, pretty_stargazers_count: number, pretty_forks_count: number, pretty_open_issues_count: number, pretty_pushed_at: number } Maximum field lengths for table formatting
+---@field list_fields string[] List of fields to display in order
 
 ---@class ListWindow
 ---@field config ListWindowConfig Window configuration
@@ -40,7 +46,6 @@ local M = {}
 ---@field cursor_autocmd_id number|nil Cursor movement autocmd ID
 ---@field cursor_debounce_timer number|nil Cursor movement debounce timer
 
--- Default list window configuration
 ---@type ListWindowConfig
 local DEFAULT_CONFIG = {
   width = 40,
@@ -52,12 +57,18 @@ local DEFAULT_CONFIG = {
   on_repo = function() end, -- Callback function when cursor moves over repository
   keymap = {}, -- Table of lhs-callback pairs for buffer-scoped keybindings
   cursor_debounce_delay = 200, -- Debounce delay for cursor movement in milliseconds
+  max_lengths = {
+    full_name = 35,
+    pretty_stargazers_count = 8,
+    pretty_forks_count = 8,
+    pretty_open_issues_count = 8,
+    pretty_pushed_at = 27, -- 13 chars for "Last updated " + 14 chars for data (fallback)
+  },
+  list_fields = { "full_name", "stars", "forks", "issues", "tags" }, -- Default field configuration
 }
 
----@type ListState
-local DEFAULT_STATE = { state = "loading", repositories = {} }
+local DEFAULT_STATE = { state = "loading", items = {} }
 
--- Validate list window configuration
 ---@param config ListWindowConfig|nil
 ---@return string|nil Error message if validation fails
 local function validate(config)
@@ -134,10 +145,16 @@ local function validate(config)
     end
   end
 
+  if config.list_fields ~= nil then
+    local list_fields_err = validators.should_be_table(config.list_fields, "list.list_fields must be an array")
+    if list_fields_err then
+      return list_fields_err
+    end
+  end
+
   return nil
 end
 
--- ListWindow class
 local ListWindow = {}
 ListWindow.__index = ListWindow
 
@@ -197,6 +214,7 @@ function ListWindow:_create_buffer()
     vim.keymap.set("n", lhs, callback, {
       buffer = buf_id,
       silent = true,
+      nowait = true,
       desc = "Store.nvim list window: " .. lhs,
     })
   end
@@ -335,10 +353,10 @@ function ListWindow:render(state)
       logger.warn("List window: Cannot render - invalid state")
       return
     end
-    if not state.repositories or type(state.repositories) ~= "table" then
-      logger.warn("List window: Cannot render - invalid repositories")
+    if not state.items or type(state.items) ~= "table" then
+      logger.warn("List window: Cannot render - invalid items")
       -- Provide fallback behavior
-      state = vim.tbl_deep_extend("force", state, { repositories = {} })
+      state = vim.tbl_deep_extend("force", state, { items = {} })
     end
 
     if state.state == "loading" then
@@ -359,32 +377,70 @@ function ListWindow:render(state)
     self.repositories = {}
     local content_lines = {}
 
-    for i, repo in ipairs(state.repositories) do
+    -- Field renderer mapping
+    local field_renderers = {
+      full_name = function(repo)
+        return repo.full_name
+      end,
+      stars = function(repo)
+        return "⭐" .. repo.pretty_stargazers_count
+      end,
+      forks = function(repo)
+        return "🍴" .. repo.pretty_forks_count
+      end,
+      issues = function(repo)
+        return "🐛" .. repo.pretty_open_issues_count
+      end,
+      pushed_at = function(repo)
+        local pushed_at = repo.pretty_pushed_at or "Unknown"
+        return "Last updated " .. pushed_at
+      end,
+    }
+
+    -- Max length mapping (with emoji prefix adjustments)
+    local max_length_map = {
+      full_name = self.config.max_lengths.full_name,
+      stars = self.config.max_lengths.pretty_stargazers_count + 2, -- +2 for ⭐
+      forks = self.config.max_lengths.pretty_forks_count + 2, -- +2 for 🍴
+      issues = self.config.max_lengths.pretty_open_issues_count + 2, -- +2 for 🐛
+      pushed_at = self.config.max_lengths.pretty_pushed_at,
+    }
+
+    for i, repo in ipairs(state.items) do
       self.repositories[i] = repo
 
-      -- Create metadata string with consistent structure
-      local metadata_parts = {}
+      local columns = {}
+      local append_content = ""
 
-      -- Always show stars (or 0 if missing)
-      local stars = repo.stargazers_count or 0
-      table.insert(metadata_parts, "⭐" .. utils.format_number(stars))
+      -- Process fields in configured order
+      for _, field in ipairs(self.config.list_fields) do
+        if field == "tags" then
+          -- Handle tags separately (append after main content)
+          if repo.tags and #repo.tags > 0 then
+            local tag_parts = {}
+            for _, tag in ipairs(repo.tags) do
+              table.insert(tag_parts, tag)
+            end
+            append_content = " " .. table.concat(tag_parts, ", ")
+          end
+        else
+          -- Handle table fields
+          local renderer = field_renderers[field]
+          if renderer then
+            local content = renderer(repo)
+            local max_length = max_length_map[field] or 20 -- Fallback length
+            table.insert(columns, { content, max_length })
+          else
+            -- Unknown field, skip with warning
+            logger.warn("Unknown field in list_fields: " .. field)
+          end
+        end
+      end
 
-      -- Always show forks (or 0 if missing)
-      local forks = repo.fork_count or 0
-      table.insert(metadata_parts, "🍴" .. utils.format_number(forks))
+      local main_content = utils.format_table_line(columns)
+      local final_line = main_content .. append_content
 
-      -- Always show watchers (or 0 if missing)
-      local watchers = repo.watchers_count or 0
-      table.insert(metadata_parts, "👀" .. utils.format_number(watchers))
-
-      local metadata = table.concat(metadata_parts, " ")
-      local full_name = repo.full_name or repo.html_url
-
-      -- Format line with full_name on left and metadata on right
-      -- Account for border width (2 characters for rounded borders)
-      local content_width = self.config.width - 2
-      local formatted_line = utils.format_line_priority_right(content_width, full_name, metadata)
-      table.insert(content_lines, formatted_line)
+      table.insert(content_lines, final_line)
     end
 
     vim.api.nvim_set_option_value("modifiable", true, { buf = self.buf_id })

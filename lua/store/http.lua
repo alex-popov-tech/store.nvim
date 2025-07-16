@@ -3,20 +3,29 @@ local cache = require("store.cache")
 local config = require("store.config")
 
 ---@class Repository
----@field full_name string Repository full name (owner/repo)
----@field description string|nil Repository description
----@field homepage string|nil Repository homepage URL
+---@field author string Repository author/owner
+---@field name string Repository name
+---@field full_name string Repository full name (author/name)
+---@field description string Repository description
+---@field homepage string Repository homepage URL
 ---@field html_url string Repository GitHub URL
----@field stargazers_count number|nil Number of stars
----@field watchers_count number|nil Number of watchers
----@field fork_count number|nil Number of forks
----@field updated_at string|nil Last updated timestamp (ISO 8601)
----@field topics string[]|nil Array of topic tags
+---@field tags string[] Array of topic tags
+---@field pretty_stargazers_count string Formatted number of stars
+---@field pretty_forks_count string Formatted number of forks
+---@field pretty_open_issues_count string Formatted number of open issues
+---@field pretty_pushed_at string Formatted last push time
+
+---@class PluginsDataMeta
+---@field total_count number Total number of repositories
+---@field max_full_name_length number Maximum length of full name
+---@field max_pretty_stargazers_length number Maximum length of formatted stars
+---@field max_pretty_forks_length number Maximum length of formatted forks
+---@field max_pretty_issues_length number Maximum length of formatted issues
+---@field max_pretty_pushed_at_length number Maximum length of formatted push time
 
 ---@class PluginsData
----@field crawled_at string Timestamp when data was crawled
----@field total_repositories number Total number of repositories
----@field repositories Repository[] Array of repository objects
+---@field meta PluginsDataMeta Metadata about the dataset
+---@field items Repository[] Array of repository objects
 
 ---@class ReadmeResult
 ---@field body string[]|nil README content as table of lines
@@ -25,20 +34,15 @@ local config = require("store.config")
 local M = {}
 
 -- Function to strip HTML tags from markdown content while preserving markdown syntax
----@param content string|nil The content to strip HTML tags from
----@return string|nil The content with HTML tags removed
+-- This function is only called when HTML tags are detected in the content
+---@param content string The content to strip HTML tags from (guaranteed to contain HTML)
+---@return string The content with HTML tags removed
 local function strip_html_tags(content)
-  if not content then
-    return content
-  end
-
   -- Don't process lines that are clearly markdown and should be preserved
   -- Skip code blocks (lines starting with ```)
   if content:match("^```") then
     return content
   end
-
-  -- Note: We'll handle markdown images in a separate post-processing step
 
   -- Skip markdown link syntax [text](url) at start of line
   if content:match("^%s*%[[^%]]*%]%(.-%)") then
@@ -56,20 +60,71 @@ local function strip_html_tags(content)
     return content
   end
 
-  -- Only strip HTML tags from lines that likely contain HTML
-  if content:match("<%s*[^>]*>") then
-    -- Remove HTML tags while preserving the content inside them
-    local cleaned = content:gsub("<%s*[^>]*>", "")
+  -- Remove HTML tags while preserving the content inside them
+  local cleaned = content:gsub("<%s*[^>]*>", "")
 
-    -- Clean up extra whitespace that might be left behind
-    cleaned = cleaned:gsub("%s+", " ")
-    cleaned = vim.trim(cleaned)
+  -- Clean up extra whitespace that might be left behind
+  cleaned = cleaned:gsub("%s+", " ")
+  return vim.trim(cleaned)
+end
 
-    return cleaned
+-- Process README lines by cleaning HTML tags and trimming whitespace
+---@param lines string[] Array of raw README lines
+---@return string[] Processed lines with HTML tags removed and whitespace trimmed
+local function process_readme_lines(lines)
+  local processed = {}
+  for i = 1, #lines do
+    local line = lines[i]
+    -- Only remove trailing whitespace, preserve leading whitespace (indentation)
+    local trimmed_line = line:gsub("%s+$", "")
+
+    -- Only call strip_html_tags if the line contains HTML-like content
+    if trimmed_line:find("<%s*[^>]*>") then
+      processed[i] = strip_html_tags(trimmed_line)
+    else
+      processed[i] = trimmed_line
+    end
+  end
+  return processed
+end
+
+-- Filter out standalone markdown image lines
+---@param lines string[] Array of processed README lines
+---@return string[] Lines with standalone images removed
+local function filter_standalone_images(lines)
+  local filtered = {}
+  local count = 0
+  for i = 1, #lines do
+    local line = lines[i]
+    if not line:match("^%s*!%[[^%]]*%]%(.-%)%s*$") then
+      count = count + 1
+      filtered[count] = line
+    end
+  end
+  return filtered
+end
+
+-- Collapse consecutive empty lines into single empty lines
+---@param lines string[] Array of README lines
+---@return string[] Lines with consecutive empty lines collapsed
+local function collapse_empty_lines(lines)
+  local collapsed = {}
+  local count = 0
+  local prev_was_empty = false
+
+  for i = 1, #lines do
+    local line = lines[i]
+    local is_empty = line == ""
+
+    if not (is_empty and prev_was_empty) then
+      count = count + 1
+      collapsed[count] = line
+    end
+
+    prev_was_empty = is_empty
   end
 
-  -- Return original content if no HTML tags found
-  return content
+  return collapsed
 end
 
 ---Fetch plugins from the gist URL, with caching support
@@ -139,6 +194,12 @@ function M.get_readme(repo_path, callback, force_refresh)
     ["Accept"] = "application/vnd.github.v3+json",
   }
 
+  -- Add GitHub token to headers if provided
+  local github_token = config.get().github_token
+  if github_token then
+    headers["Authorization"] = "Bearer " .. github_token
+  end
+
   curl.get(api_url, {
     headers = headers,
     timeout = 10000,
@@ -150,50 +211,11 @@ function M.get_readme(repo_path, callback, force_refresh)
           local clean_content = json_data.content:gsub("\n", "")
           local content = vim.base64.decode(clean_content)
           local split_lines = vim.split(content, "\n", { plain = true })
-          local lines = {}
 
-          -- Pre-allocate table for better performance
-          local line_count = #split_lines
-          for i = 1, line_count do
-            local line = split_lines[i]
-            -- Only remove trailing whitespace, preserve leading whitespace (indentation)
-            local trimmed_line = line:gsub("%s+$", "")
-            local cleaned_line = strip_html_tags(trimmed_line)
-            lines[i] = cleaned_line -- Direct assignment instead of table.insert
-          end
-
-          -- Post-process to remove standalone markdown inline images
-          local image_filtered_lines = {}
-          local filtered_count = 0
-          for i = 1, line_count do
-            local line = lines[i]
-            -- Skip lines that are just markdown images (![alt](url))
-            -- Match lines that start with ![, contain ](, and end with )
-            if not line:match("^%s*!%[[^%]]*%]%(.-%)%s*$") then
-              filtered_count = filtered_count + 1
-              image_filtered_lines[filtered_count] = line -- Direct assignment
-            end
-          end
-          lines = image_filtered_lines
-
-          -- Post-process to collapse multiple consecutive empty lines
-          local collapsed_lines = {}
-          local collapsed_count = 0
-          local prev_was_empty = false
-
-          for i = 1, filtered_count do
-            local line = lines[i]
-            local is_empty = line == ""
-
-            if not (is_empty and prev_was_empty) then
-              collapsed_count = collapsed_count + 1
-              collapsed_lines[collapsed_count] = line -- Direct assignment
-            end
-
-            prev_was_empty = is_empty
-          end
-
-          lines = collapsed_lines
+          -- Process README content through pipeline
+          local lines = process_readme_lines(split_lines)
+          lines = filter_standalone_images(lines)
+          lines = collapse_empty_lines(lines)
 
           -- Save to cache for future requests (includes memory + file internally)
           cache.save_readme(plugin_url, lines)

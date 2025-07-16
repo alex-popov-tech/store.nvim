@@ -24,6 +24,7 @@ local M = {}
 
 ---@class HeadingState
 ---@field query string Current filter query
+---@field sort_type string Current sort type
 ---@field filtered_count number Number of plugins after filtering
 ---@field total_count number Total number of plugins
 ---@field state string current component state - "loading", "ready", "error"
@@ -41,6 +42,7 @@ local DEFAULT_CONFIG = {
 local DEFAULT_STATE = {
   state = "loading",
   query = "",
+  sort_type = "default",
   filtered_count = 0,
   total_count = 0,
 }
@@ -226,22 +228,32 @@ function HeadingWindow:render(data)
     local content_lines = {}
     local width = self.config.width
 
-    -- Line 0: ASCII art only
-    table.insert(content_lines, utils.format_line(width, ASCII_ART[1]))
-
-    -- Line 1: ASCII art + filter info
+    -- Line 0: ASCII art + filter info
     local filter_text = ""
     if data.query ~= "" then
       filter_text = "Filter: " .. data.query
     else
       filter_text = "Filter: none"
     end
-    table.insert(content_lines, utils.format_line(width, ASCII_ART[2], filter_text))
+    table.insert(content_lines, utils.format_line(width, ASCII_ART[1], filter_text))
 
-    -- Line 2: ASCII art only
-    table.insert(content_lines, utils.format_line(width, ASCII_ART[3]))
+    -- Line 1: ASCII art only (empty line)
+    table.insert(content_lines, utils.format_line(width, ASCII_ART[2]))
 
-    -- Line 3: ASCII art + plugin count
+    -- Line 2: ASCII art + sort info
+    local sort_text = ""
+    if data.sort_type then
+      local sort = require("store.sort")
+      sort_text = "Sort: " .. sort.get_sort_label(data.sort_type)
+    else
+      sort_text = "Sort: Default"
+    end
+    table.insert(content_lines, utils.format_line(width, ASCII_ART[3], sort_text))
+
+    -- Line 3: ASCII art only (empty line)
+    table.insert(content_lines, utils.format_line(width, ASCII_ART[4]))
+
+    -- Line 4: ASCII art + plugin count
     local count_text = ""
     if data.state == "loading" then
       count_text = "Loading plugins..."
@@ -250,10 +262,7 @@ function HeadingWindow:render(data)
     else
       count_text = string.format("Showing %d of %d plugins", data.filtered_count, data.total_count)
     end
-    table.insert(content_lines, utils.format_line(width, ASCII_ART[4], count_text))
-
-    -- Line 4: ASCII art only
-    table.insert(content_lines, utils.format_line(width, ASCII_ART[5]))
+    table.insert(content_lines, utils.format_line(width, ASCII_ART[5], count_text))
 
     -- Line 5: ASCII art + help text
     local help_text = "Press ? for help"

@@ -1,4 +1,5 @@
 local validators = require("store.validators")
+local logger = require("store.logger")
 
 ---@class ModalConfig
 ---@field border string Border style (none, single, double, rounded, solid, shadow)
@@ -11,6 +12,10 @@ local validators = require("store.validators")
 ---@field list number Proportion of width for list pane (0.0-1.0)
 ---@field preview number Proportion of width for preview pane (0.0-1.0)
 
+---@class FocusProportionsConfig
+---@field focused number Proportion of width for focused pane (0.0-1.0)
+---@field unfocused number Proportion of width for unfocused pane (0.0-1.0)
+
 ---@class KeybindingsConfig
 ---@field help string Key to show help
 ---@field close string Key to close modal
@@ -18,6 +23,7 @@ local validators = require("store.validators")
 ---@field refresh string Key to refresh data
 ---@field open string Key to open selected repository
 ---@field switch_focus string Key to switch focus between panes
+---@field sort string Key to open sort menu
 
 ---@class UserConfig
 ---@field width? number Window width (0.0-1.0 for percentage, >1 for absolute)
@@ -29,6 +35,12 @@ local validators = require("store.validators")
 ---@field cache_duration? number Cache duration in seconds
 ---@field data_source_url? string URL for fetching plugin data
 ---@field logging? string Logging level: "off"|"error"|"warn"|"log"|"debug" (default: "off")
+---@field auto_resize_on_focus? boolean Enable automatic window resizing when focus changes
+---@field focus_proportions? FocusProportionsConfig Proportions when focused/unfocused
+---@field focus_resize_debounce? number Debounce delay for focus-based resize (ms)
+---@field github_token? string GitHub personal access token for API authentication
+---@field full_name_limit? number Maximum character length for repository full_name display
+---@field list_fields? string[] List of fields to display in order: "full_name"|"stars"|"forks"|"issues"|"tags"
 
 ---@class ComputedConfig : UserConfig
 ---@field computed_layout ComputedLayout Computed window layout dimensions
@@ -41,7 +53,6 @@ local validators = require("store.validators")
 
 local M = {}
 
--- Internal storage for computed plugin config
 ---@type ComputedConfig|nil
 local plugin_config = nil
 
@@ -73,15 +84,31 @@ local DEFAULT_USER_CONFIG = {
     refresh = "r",
     open = "<cr>",
     switch_focus = "<tab>",
+    sort = "s",
   },
 
   -- Behavior
   preview_debounce = 150, -- ms delay for preview updates
   cache_duration = 24 * 60 * 60, -- 24 hours
-  data_source_url = "https://gist.githubusercontent.com/alex-popov-tech/93dcd3ce38cbc7a0b3245b9b59b56c9b/raw/store.nvim-repos.json", -- URL for plugin data
+  data_source_url = "https://gist.githubusercontent.com/alex-popov-tech/dfb6adf1ee0506461d7dc029a28f851d/raw/store.nvim_db_1.1.0.json", -- URL for plugin data
 
   -- Logging
   logging = "off",
+
+  -- Auto-resize on focus
+  auto_resize_on_focus = true,
+  focus_proportions = {
+    focused = 0.7, -- Focused window gets 70%
+    unfocused = 0.3, -- Unfocused window gets 30%
+  },
+  focus_resize_debounce = 100, -- 100ms debounce delay
+
+  -- GitHub API authentication
+  github_token = nil, -- GitHub personal access token for API authentication
+
+  -- List display settings
+  full_name_limit = 35, -- Maximum character length for repository full_name display
+  list_fields = { "full_name", "pushed_at", "stars", "forks", "issues", "tags" }, -- Fields to display in order
 }
 
 ---@class WindowLayout
@@ -103,8 +130,9 @@ local DEFAULT_USER_CONFIG = {
 
 ---Calculate window dimensions and positions for 3-window layout
 ---@param config UserConfig Modal configuration with width, height, and proportions
+---@param custom_proportions? ProportionsConfig Optional custom proportions to override config.proportions
 ---@return ComputedLayout layout Layout calculations for all windows
-local function calculate_layout(config)
+local function calculate_layout(config, custom_proportions)
   local screen_width = vim.o.columns
   local screen_height = vim.o.lines
 
@@ -121,10 +149,13 @@ local function calculate_layout(config)
   local gap_between_windows = 2
   local content_height = total_height - header_height - gap_between_windows
 
+  -- Use custom proportions if provided, otherwise use config proportions
+  local proportions = custom_proportions or config.proportions
+
   -- Window splits using proportions
-  local list_width = math.floor(total_width * config.proportions.list)
+  local list_width = math.floor(total_width * proportions.list)
   -- Subtract gap to align with header
-  local preview_width = math.floor(total_width * config.proportions.preview) - 2
+  local preview_width = math.floor(total_width * proportions.preview) - 2
 
   return {
     total_width = total_width,
@@ -249,6 +280,83 @@ local function validate_config(config, merged_config)
     end
   end
 
+  if config.auto_resize_on_focus ~= nil then
+    local err = validators.should_be_boolean(config.auto_resize_on_focus, "auto_resize_on_focus must be a boolean")
+    if err then
+      return false, err
+    end
+  end
+
+  if config.focus_proportions ~= nil then
+    local err = validators.should_be_table(config.focus_proportions, "focus_proportions must be a table")
+    if err then
+      return false, err
+    end
+
+    if config.focus_proportions.focused ~= nil then
+      local focused_err = validators.should_be_positive_number(
+        config.focus_proportions.focused,
+        "focus_proportions.focused must be a positive number"
+      )
+      if focused_err then
+        return false, focused_err
+      end
+    end
+
+    if config.focus_proportions.unfocused ~= nil then
+      local unfocused_err = validators.should_be_positive_number(
+        config.focus_proportions.unfocused,
+        "focus_proportions.unfocused must be a positive number"
+      )
+      if unfocused_err then
+        return false, unfocused_err
+      end
+    end
+
+    -- Validate focus proportions sum to 1.0
+    local focused_prop = merged_config.focus_proportions.focused
+    local unfocused_prop = merged_config.focus_proportions.unfocused
+    if math.abs((focused_prop + unfocused_prop) - 1.0) > 0.001 then
+      return false, "focus_proportions.focused + focus_proportions.unfocused must equal 1.0"
+    end
+  end
+
+  if config.focus_resize_debounce ~= nil then
+    local err = validators.should_be_positive_number(
+      config.focus_resize_debounce,
+      "focus_resize_debounce must be a positive number"
+    )
+    if err then
+      return false, err
+    end
+  end
+
+  if config.github_token ~= nil then
+    local err = validators.should_be_string(config.github_token, "github_token must be a string")
+    if err then
+      return false, err
+    end
+  end
+
+  if config.full_name_limit ~= nil then
+    local err =
+      validators.should_be_positive_number(config.full_name_limit, "full_name_limit must be a positive number")
+    if err then
+      return false, err
+    end
+  end
+
+  if config.list_fields ~= nil then
+    local err = validators.should_be_table(config.list_fields, "list_fields must be an array")
+    if err then
+      return false, err
+    end
+
+    if #config.list_fields == 0 then
+      return false, "list_fields must contain at least one field"
+    end
+  end
+
   return true, nil
 end
 
@@ -276,6 +384,10 @@ function M.setup(user_config)
     },
     computed_at = os.time(),
   })
+
+  -- Setup highlight groups for bubble-style tags
+  vim.api.nvim_set_hl(0, "StoreTagBorder", { fg = "#5E81AC" })
+  vim.api.nvim_set_hl(0, "StoreTagText", { bg = "#5E81AC", fg = "#ECEFF4" })
 end
 
 ---Get plugin configuration (with lazy initialization)
@@ -286,6 +398,39 @@ function M.get()
     M.setup(DEFAULT_USER_CONFIG)
   end
   return plugin_config
+end
+
+---Calculate layout with focus-based proportions
+---@param focused_component string Component that should be focused ("list" or "preview")
+---@return ComputedLayout layout Layout calculations with focus proportions applied
+function M.calculate_layout_with_focus(focused_component)
+  local config = M.get()
+
+  if not config.auto_resize_on_focus then
+    -- Feature disabled, return current layout
+    return config.computed_layout
+  end
+
+  -- Validate focus_proportions exists
+  if not config.focus_proportions or not config.focus_proportions.focused or not config.focus_proportions.unfocused then
+    logger.warn("focus_proportions not properly configured, returning current layout")
+    return config.computed_layout
+  end
+
+  -- Create proportions based on focus
+  local focus_proportions = {}
+  if focused_component == "list" then
+    focus_proportions.list = config.focus_proportions.focused
+    focus_proportions.preview = config.focus_proportions.unfocused
+  elseif focused_component == "preview" then
+    focus_proportions.list = config.focus_proportions.unfocused
+    focus_proportions.preview = config.focus_proportions.focused
+  else
+    -- Invalid component, return current layout
+    return config.computed_layout
+  end
+
+  return calculate_layout(config, focus_proportions)
 end
 
 return M

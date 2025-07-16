@@ -30,7 +30,7 @@ local DEFAULT_CACHE_MAX_AGE = 24 * 60 * 60
 local readmes_memory_cache = {}
 ---@type PluginsCacheItem
 local plugins_memory_cache = {
-  content = { crawled_at = "", total_repositories = 0, repositories = {} },
+  content = { meta = { total_count = 0 }, items = {} },
   timestamp = 0,
 }
 
@@ -327,7 +327,7 @@ function M.clear_memory_cache()
   logger.debug("Clearing memory cache")
   readmes_memory_cache = {}
   plugins_memory_cache = {
-    content = { crawled_at = "", total_repositories = 0, repositories = {} },
+    content = { meta = { total_count = 0 }, items = {} },
     timestamp = 0,
   }
 end

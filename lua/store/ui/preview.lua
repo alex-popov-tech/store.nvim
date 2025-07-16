@@ -161,6 +161,7 @@ function PreviewWindow:_create_buffer()
     vim.keymap.set("n", lhs, callback, {
       buffer = buf_id,
       silent = true,
+      nowait = true,
       desc = "Store.nvim preview window: " .. lhs,
     })
   end
