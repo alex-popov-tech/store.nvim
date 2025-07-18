@@ -18,24 +18,6 @@ M.sorts = {
   },
 }
 
--- local SORT_FUNCTIONS = {
---   default = nil, -- no sorting, preserve original order
---
---   most_stars = function(a, b)
---     return (a.stargazers_count or 0) > (b.stargazers_count or 0)
---   end,
---
---   recently_updated = function(a, b)
---     return (a.pushed_at or 0) > (b.pushed_at or 0)
---   end,
--- }
---
--- local SORT_LABELS = {
---   default = "Default",
---   most_stars = "Most Stars",
---   recently_updated = "Recently Updated",
--- }
-
 ---Sort repositories by given type
 ---@param repos Repository[] Array of repositories to sort
 ---@param sort_type string Sort type: "default", "most_stars", "recently_updated"

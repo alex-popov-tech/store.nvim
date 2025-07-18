@@ -371,14 +371,14 @@ function StoreModal:open()
     logger.error("Failed to open heading component: " .. heading_error)
     return
   end
-  
+
   local list_error = self.list:open()
   if list_error then
     logger.error("Failed to open list component: " .. list_error)
     self.heading:close() -- Clean up already opened components
     return
   end
-  
+
   local preview_error = self.preview:open()
   if preview_error then
     logger.error("Failed to open preview component: " .. preview_error)
@@ -386,14 +386,14 @@ function StoreModal:open()
     self.list:close()
     return
   end
-  
+
   self.is_open = true
 
   -- Register all components with the window manager for coordinated closing
   local heading_win_id = self.heading:get_window_id()
   local list_win_id = self.list:get_window_id()
   local preview_win_id = self.preview:get_window_id()
-  
+
   if heading_win_id then
     self.window_manager:register_component(heading_win_id, function()
       self.heading:close()
@@ -452,12 +452,15 @@ function StoreModal:open()
     -- Update list component configuration using public API
     self.list:update_config({
       max_lengths = {
-        full_name = math.min(data.meta.max_full_name_length or self.config.full_name_limit, self.config.full_name_limit),
+        full_name = math.min(
+          data.meta.max_full_name_length or self.config.full_name_limit,
+          self.config.full_name_limit
+        ),
         pretty_stargazers_count = data.meta.max_pretty_stargazers_length or 8,
         pretty_forks_count = data.meta.max_pretty_forks_length or 8,
         pretty_open_issues_count = data.meta.max_pretty_issues_length or 8,
-        pretty_pushed_at = 13 + (data.meta.max_pretty_pushed_at_length or 14)
-      }
+        pretty_pushed_at = 13 + (data.meta.max_pretty_pushed_at_length or 14),
+      },
     })
 
     logger.debug("Plugin data loaded successfully: " .. tostring(data.meta.total_count) .. " repositories")
@@ -554,7 +557,7 @@ function StoreModal:close()
 
   -- Close all components with error handling
   local close_errors = {}
-  
+
   if self.heading then
     local heading_error = self.heading:close()
     if heading_error then
@@ -575,7 +578,7 @@ function StoreModal:close()
       table.insert(close_errors, "preview: " .. preview_error)
     end
   end
-  
+
   if #close_errors > 0 then
     logger.warn("Some components failed to close: " .. table.concat(close_errors, ", "))
   end
@@ -678,7 +681,7 @@ function StoreModal:refresh()
       if vim.tbl_contains(self.config.list_fields, "pushed_at") then
         config_updates.max_lengths.pretty_pushed_at = 13 + (data.meta.max_pretty_pushed_at_length or 14)
       end
-      
+
       -- Apply config updates using public API
       self.list:update_config(config_updates)
     end
