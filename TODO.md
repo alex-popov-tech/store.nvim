@@ -67,7 +67,7 @@
   - ✅ Format numbers with appropriate suffixes (1.2k, 3.4M)
   - ✅ Repository statistics displayed with emoji icons
   - ✅ Clean formatting with proper spacing and alignment
-  - ❌ **PENDING**: Sorting options by different metrics not implemented
+  - ✅ **COMPLETED**: Sorting options by different metrics implemented (v1.1.0)
 
 - [x] **22. Add ASCII art heading for plugin names** ( must have before release )
   - ✅ ASCII art header implemented in dedicated header window
@@ -126,8 +126,10 @@
 ## 🔄 In Progress / Pending Tasks
 
 ### Core Features
-- [ ] **3. Update script to count readme sections as 'categories' for modal switching**
-  - Parse README sections to create browsable categories
+- [x] **3. Update script to count readme sections as 'categories' for modal switching**
+  - ✅ **COMPLETED**: Crawler transforms categories into tags (v1.1.0)
+  - ✅ Parses awesome-neovim README sections and converts them to searchable tags
+  - ✅ Categories accessible through enhanced filtering system with `tags:` syntax
 
 - [ ] **15. Add ability for preview to toggle between README and doc.txt**
   - Implement tab/keybinding to switch between README.md and doc.txt views
@@ -145,17 +147,17 @@
   - Improve visual design with better formatting and icons
   - Implement gradual disappearing effect instead of abrupt close
 
-- [ ] **21. Add ability to source from multiple sources**
-  - Extend beyond awesome-neovim to support multiple plugin registries
-  - Add configuration for custom plugin sources
-  - Implement source-specific crawlers and parsers
-  - Merge and deduplicate plugins from multiple sources
+- [x] **21. Add ability to source from multiple sources**
+  - ✅ **COMPLETED**: Major crawler update (v1.1.0)
+  - ✅ Now scanning entire GitHub for `neovim-plugin` topic (3k+ repositories)
+  - ✅ Moved to separate TypeScript crawler repository
+  - ✅ Daily automated scanning ensures new plugins are discovered
 
-- [ ] **28. Make filtering use custom structure for unified search**
-  - Implement syntax like 'tags:one,two,three category:lsp' in filter input
-  - Enable searching across descriptions, categories, and tags in same field
-  - Parse filter input to extract different search criteria
-  - Apply multiple filters simultaneously for more precise results
+- [x] **28. Make filtering use custom structure for unified search**
+  - ✅ **COMPLETED**: Advanced filtering syntax implemented (v1.1.0)
+  - ✅ Supports `author:`, `name:`, `description:`, `tags:` syntax
+  - ✅ Combined queries with `;` separator for multiple criteria
+  - ✅ Complex multi-field queries fully functional
 
 - [ ] **29. Track 'new' plugins introduced recently**
   - Implement system to identify recently added plugins
@@ -163,26 +165,26 @@
   - Display "NEW" indicators for recently introduced plugins
   - Configure time threshold for what constitutes "new" plugins
 
-- [ ] **30. Display plugin last updated time in GitHub-style format**
-  - Show relative time stamps like "2 days ago", "6 hours ago", "yesterday", "3 weeks ago"
-  - Use GitHub's `updated_at` field from repository API data
-  - Format timestamps in human-readable relative format
-  - Display in plugin list alongside stars/forks/watchers for activity overview
+- [x] **30. Display plugin last updated time in GitHub-style format**
+  - ✅ **COMPLETED**: `pushed_at` field added to list display (v1.1.0)
+  - ✅ Configurable through `list_fields` configuration option
+  - ✅ Shows last updated timestamp in plugin list
+  - ✅ Part of enhanced repository display system
 
 - [ ] **31. Add sandboxed plugin installation for testing** ( needs investigation, efforts required )
   - Create `store.nvim.sandbox.lua` file for temporary plugin loading
   - Source sandbox file synchronously in init.lua for testing purposes
   - Allow users to "try before install" plugins without permanent changes
-  - Investigate technical approach for safe plugin sandboxing
+  - Investigate vim's native package manager (:h vim-pack) for temporary plugin installation
+  - Explore using vim-pack JSON specs for marketplace-managed plugin installation
   - Implement cleanup mechanism to remove sandbox plugins after testing
   - Add keybinding to toggle sandbox mode for selected plugin
 
-- [ ] **32. Reach out to Dotfyle for plugin database collaboration**
-  - Contact https://github.com/codicocodes/dotfyle team about sharing their plugin database
-  - Request access to their plugin data in structured format (JSON/API)
-  - Explore integration possibilities for richer plugin metadata
-  - Investigate combining awesome-neovim data with Dotfyle's curated collection
-  - Potentially access user ratings, categories, and usage statistics from Dotfyle
+- [~] **32. Reach out to Dotfyle for plugin database collaboration** ( suspended )
+  - ⏸️ **SUSPENDED**: Limited responsiveness from Dotfyle team
+  - 📝 GitHub issue created: https://github.com/codicocodes/dotfyle/issues/178
+  - 🔄 Awaiting response for plugin database collaboration
+  - 💡 Alternative: Current crawler expansion to 3k+ repos may provide sufficient coverage
 
 - [ ] **33. Add 'newly posted' plugins view similar to lazy.nvim updates**
   - Create dedicated view/tab showing recently added plugins to the database
@@ -192,6 +194,15 @@
   - Implement lazy.nvim-style update interface with expandable plugin details
   - Allow users to mark plugins as "seen" to track what's new for them
 
+- [ ] **34. Add 'installed' label for plugins using multiple package manager detection**
+  - Parse `lazy-lock.json` from Neovim data directory to detect lazy.nvim installed plugins
+  - Investigate vim's native package manager (:h vim-pack) for JSON plugin specs
+  - Display visual indicator (label/icon) for plugins that are already installed
+  - Show installed status in plugin list alongside repository statistics
+  - Add filtering option to show only installed or non-installed plugins
+  - Handle different plugin specification formats across package managers (lazy, packer, vim-pack)
+  - Cache parsed lock file data and track installation state changes for dynamic updates
+
 ---
 
 ## 🔮 Future Enhancement Ideas (Optional)
@@ -200,22 +211,27 @@
   - Custom highlight groups for better theming support
   - Integration with user's colorscheme
 
-- [ ] **24. Dynamic window resizing**
-  - Resize windows on tab switching or focus changes
-  - More responsive layout adjustments
+- [x] **24. Dynamic window resizing**
+  - ✅ **COMPLETED**: Dynamic window resizing (v1.1.0)
+  - ✅ Focused pane gets more screen space (30%/70% ↔ 70%/30%)
+  - ✅ Responsive layout adjustments based on focus
+  - ✅ Improved visibility for active pane
 
-- [ ] **25. Improved window management**
-  - Add autocmd to close all components if one is closed unexpectedly
-  - Better cleanup and error recovery
+- [x] **25. Improved window management**
+  - ✅ **COMPLETED**: WindowManager improvements (v1.1.0)
+  - ✅ Added hook for unexpectedly closed windows
+  - ✅ Graceful cleanup when any window is closed unexpectedly
+  - ✅ Better error recovery and component-level management
 
-- [ ] **26. Tag-based filtering**
-  - Add filtering by plugin categories/tags
-  - Parse and display plugin tags from repository metadata
+- [x] **26. Tag-based filtering**
+  - ✅ **COMPLETED**: Tag-based filtering implemented (v1.1.0)
+  - ✅ Filter by plugin categories/tags using `tags:` syntax
+  - ✅ Tags parsed from repository metadata and awesome-neovim categories
 
 ---
 
 ## 📝 Notes
 
-**Last Updated**: 2025-07-09
+**Last Updated**: 2025-07-18
 
 This TODO.md file is now the canonical source for tracking development progress. The roadmap has been moved from CLAUDE.md to this dedicated tracking document for better organization and clarity.

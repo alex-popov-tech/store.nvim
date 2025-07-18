@@ -52,7 +52,7 @@ local function _format_help_line(key, action, key_width, action_width)
   -- Use padding similar to list component
   local key_part = string.format("%-" .. key_width .. "s", key)
   local action_part = string.format("%-" .. action_width .. "s", action)
-  
+
   -- Add spacing between columns
   return key_part .. "  " .. action_part
 end
@@ -65,7 +65,7 @@ local function _create_content_lines()
 
   -- Add header
   table.insert(lines, _format_help_line("Key", "Action", key_width, action_width))
-  
+
   -- Add separator line
   local separator = string.rep("-", key_width) .. "  " .. string.rep("-", action_width)
   table.insert(lines, separator)
@@ -141,7 +141,7 @@ end
 local function _create_window(buf_id)
   -- Get modal layout information
   local config = require("store.config").get()
-  local layout = config.computed_layout
+  local layout = config.layout
 
   -- Calculate window dimensions based on content
   local key_width, action_width = _calculate_column_widths()

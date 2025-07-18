@@ -1,110 +1,10 @@
 local M = {}
 
----Create a formatted line with left and right content, properly spaced and padded
----@param width number Total width of the line
----@param left string|nil Left-aligned content
----@param right string|nil Right-aligned content
----@return string Formatted line with proper spacing and 1 column right padding
-function M.format_line(width, left, right)
-  left = left or ""
-  right = right or ""
-
-  -- Reserve 1 column for right padding
-  local right_padding = 1
-  local usable_width = width - right_padding
-
-  -- If both left and right content fit with at least 1 space between
-  local min_spacing = 1
-  local available_space = usable_width - #left - #right - min_spacing
-
-  if available_space >= 0 then
-    -- Normal case: both fit with proper spacing
-    local spacing = min_spacing + available_space
-    return left .. string.rep(" ", spacing) .. right .. string.rep(" ", right_padding)
-  else
-    -- Content is too long for the width, truncate right content
-    local max_right_length = usable_width - #left - min_spacing
-    if max_right_length > 0 then
-      local truncated_right = string.sub(right, 1, max_right_length - 3) .. "..."
-      return left .. string.rep(" ", min_spacing) .. truncated_right .. string.rep(" ", right_padding)
-    else
-      -- Even left content is too long, just return left content truncated
-      return string.sub(left, 1, usable_width) .. string.rep(" ", right_padding)
-    end
-  end
-end
-
----Create a formatted line with left and right content, prioritizing right content visibility
----@param width number Total width of the line
----@param left string|nil Left-aligned content
----@param right string|nil Right-aligned content
----@return string Formatted line with proper spacing, truncating left content if necessary
-function M.format_line_priority_right(width, left, right)
-  left = left or ""
-  right = right or ""
-
-  -- Use display width instead of character count for Unicode characters
-  local left_width = vim.fn.strdisplaywidth(left)
-  local right_width = vim.fn.strdisplaywidth(right)
-
-  -- If right content is longer than the width, just return right content truncated
-  if right_width >= width then
-    -- Truncate by characters until display width fits
-    local truncated = right
-    while vim.fn.strdisplaywidth(truncated) > width and #truncated > 0 do
-      truncated = string.sub(truncated, 1, #truncated - 1)
-    end
-    return truncated
-  end
-
-  -- If both left and right content fit with at least 1 space between
-  local min_spacing = 1
-  local available_space = width - left_width - right_width - min_spacing
-
-  if available_space >= 0 then
-    -- Normal case: both fit with proper spacing
-    local spacing = min_spacing + available_space
-    return left .. string.rep(" ", spacing) .. right
-  else
-    -- Content is too long for the width, truncate left content to prioritize right
-    local max_left_width = width - right_width - min_spacing
-    if max_left_width > 3 then
-      -- Truncate left content with ellipsis
-      local truncated_left = left
-      -- Keep truncating until the content + ellipsis fits in the available space
-      while vim.fn.strdisplaywidth(truncated_left) + 3 > max_left_width and #truncated_left > 0 do
-        truncated_left = string.sub(truncated_left, 1, #truncated_left - 1)
-      end
-      truncated_left = truncated_left .. "..."
-      return truncated_left .. string.rep(" ", min_spacing) .. right
-    else
-      -- Not enough space for meaningful left content, just show right
-      return string.rep(" ", width - right_width) .. right
-    end
-  end
-end
-
----Format a number with appropriate suffix (1.2k, 3.4M) with 1 decimal precision
----@param num number Number to format
----@return string Formatted number with suffix
-function M.format_number(num)
-  if type(num) ~= "number" then
-    return "0"
-  end
-
-  if num < 1000 then
-    return tostring(num)
-  elseif num < 1000000 then
-    local formatted = num / 1000
-    return string.format("%.1fk", formatted)
-  elseif num < 1000000000 then
-    local formatted = num / 1000000
-    return string.format("%.1fM", formatted)
-  else
-    local formatted = num / 1000000000
-    return string.format("%.1fB", formatted)
-  end
-end
+-- Layout constants
+local MIN_MODAL_WIDTH = 85
+local MIN_MODAL_HEIGHT = 18
+local HEADER_HEIGHT = 6
+local GAP_BETWEEN_WINDOWS = 2
 
 ---Open a URL in the default browser (cross-platform)
 ---@param url string URL to open
@@ -128,129 +28,6 @@ function M.open_url(url)
   else
     logger.error("vim.ui.open not available - please update to Neovim 0.10+")
   end
-end
-
----Format tags with bubble-style highlighting and apply highlights directly
----@param tags string[] Array of tag strings
----@param buf_id number Buffer ID
----@param ns_id number Namespace ID for highlights
----@param line_num number Line number (0-indexed)
----@param start_col number Starting column position for tags
----@return string formatted_text The formatted text with bubble characters
----@return number end_col The ending column position after all tags
-function M.format_and_highlight_bubble_tags(tags, buf_id, ns_id, line_num, start_col)
-  if not tags or #tags == 0 then
-    return "", start_col
-  end
-
-  local text_parts = {}
-  local current_col = start_col
-
-  for i, tag in ipairs(tags) do
-    local left_border = "▌"
-    local right_border = "▐"
-    local tag_with_borders = left_border .. tag .. right_border
-
-    -- Add to text parts
-    table.insert(text_parts, tag_with_borders)
-
-    -- Apply highlights immediately
-    -- Left border
-    vim.api.nvim_buf_set_extmark(buf_id, ns_id, line_num, current_col, {
-      end_col = current_col + vim.fn.strdisplaywidth(left_border),
-      hl_group = "StoreTagBorder",
-    })
-    current_col = current_col + vim.fn.strdisplaywidth(left_border)
-
-    -- Tag text
-    vim.api.nvim_buf_set_extmark(buf_id, ns_id, line_num, current_col, {
-      end_col = current_col + vim.fn.strdisplaywidth(tag),
-      hl_group = "StoreTagText",
-    })
-    current_col = current_col + vim.fn.strdisplaywidth(tag)
-
-    -- Right border
-    vim.api.nvim_buf_set_extmark(buf_id, ns_id, line_num, current_col, {
-      end_col = current_col + vim.fn.strdisplaywidth(right_border),
-      hl_group = "StoreTagBorder",
-    })
-    current_col = current_col + vim.fn.strdisplaywidth(right_border)
-
-    -- Add space between tags (except for last tag)
-    if i < #tags then
-      table.insert(text_parts, " ")
-      current_col = current_col + 1
-    end
-  end
-
-  return table.concat(text_parts, ""), current_col
-end
-
----Format a list of string-length pairs into a table-like line with consistent column widths
----@param pairs table[] List of {string, number} pairs where string is content and number is column width
----@return string Formatted line with space-separated columns of fixed widths
-function M.format_table_line(pairs)
-  local logger = require("store.logger")
-
-  if type(pairs) ~= "table" then
-    logger.error("format_table_line: expected table, got " .. type(pairs))
-    return ""
-  end
-
-  if #pairs == 0 then
-    return ""
-  end
-
-  local columns = {}
-
-  for i, pair in ipairs(pairs) do
-    if type(pair) ~= "table" or #pair ~= 2 then
-      logger.error("format_table_line: pair " .. i .. " is not a valid {string, number} pair")
-      table.insert(columns, "")
-    else
-      local str, length = pair[1], pair[2]
-      local formatted = M.pad_or_truncate(str, length)
-      table.insert(columns, formatted)
-    end
-  end
-
-  return table.concat(columns, " ")
-end
-
----Pad or truncate a string to a fixed length with ellipsis
----@param str string String to process
----@param max_length number Maximum length of the result
----@return string Fixed-length string, either padded with spaces or truncated with ellipsis
-function M.pad_or_truncate(str, max_length)
-  local logger = require("store.logger")
-
-  if type(str) ~= "string" then
-    logger.error("pad_or_truncate: expected string, got " .. type(str))
-    str = tostring(str or "")
-  end
-
-  if max_length <= 0 then
-    return ""
-  end
-
-  local char_count = vim.fn.strchars(str)
-
-  if char_count == max_length then
-    return str
-  end
-
-  if char_count < max_length then
-    local spaces_needed = max_length - char_count
-    return str .. string.rep(" ", spaces_needed)
-  end
-
-  -- char_count > max_length, truncate and add ellipsis
-  if max_length == 1 then
-    return "…"
-  end
-
-  local truncated = vim.fn.strcharpart(str, 0, max_length - 1)
-  return truncated .. "…"
 end
 
 ---@class FilterCriterion
@@ -432,6 +209,244 @@ function M.create_advanced_filter(query_string)
     return true
   end,
     nil
+end
+
+-- Function to strip HTML tags from markdown content while preserving markdown syntax
+-- This function is only called when HTML tags are detected in the content
+---@param content string The content to strip HTML tags from (guaranteed to contain HTML)
+---@return string The content with HTML tags removed
+function M.strip_html_tags(content)
+  -- Don't process lines that are clearly markdown and should be preserved
+  -- Skip code blocks (lines starting with ```)
+  if content:match("^```") then
+    return content
+  end
+
+  -- Skip markdown link syntax [text](url) at start of line
+  if content:match("^%s*%[[^%]]*%]%(.-%)") then
+    return content
+  end
+
+  -- Skip lines that are just ASCII art or similar (contain lots of special chars)
+  -- But not if they contain HTML tags (< and >)
+  local special_char_count = 0
+  local total_chars = #content
+  for char in content:gmatch("[^%w%s]") do
+    special_char_count = special_char_count + 1
+  end
+  if total_chars > 0 and (special_char_count / total_chars) > 0.4 and not content:match("[<>]") then
+    return content
+  end
+
+  -- Remove HTML tags while preserving the content inside them
+  local cleaned = content:gsub("<%s*[^>]*>", "")
+
+  -- Clean up extra whitespace that might be left behind
+  cleaned = cleaned:gsub("%s+", " ")
+  return vim.trim(cleaned)
+end
+
+---Calculate window dimensions and positions for 3-window layout
+---@param layout_config {width: number, height: number, proportions: {list: number, preview: number}}
+---@return StoreModalLayout|nil layout Layout calculations for all windows, nil if validation fails
+---@return string|nil error Error message if validation fails
+function M.calculate_layout(layout_config)
+  -- Validate input config
+  if not layout_config then
+    return nil, "Layout config is required"
+  end
+
+  if not layout_config.width or not layout_config.height then
+    return nil, "Layout config must have width and height"
+  end
+
+  if not layout_config.proportions or not layout_config.proportions.list or not layout_config.proportions.preview then
+    return nil, "Layout config must have proportions with list and preview"
+  end
+
+  local screen_width = vim.o.columns
+  local screen_height = vim.o.lines
+
+  -- Validate screen dimensions
+  if screen_width <= 0 or screen_height <= 0 then
+    return nil, "Invalid screen dimensions"
+  end
+
+  -- Convert percentages to absolute values
+  local total_width = math.floor(screen_width * layout_config.width)
+  local total_height = math.floor(screen_height * layout_config.height)
+
+  -- Validate minimum dimensions using constants
+  if total_width < MIN_MODAL_WIDTH or total_height < MIN_MODAL_HEIGHT then
+    return nil, string.format("Modal dimensions too small (minimum: %dx%d)", MIN_MODAL_WIDTH, MIN_MODAL_HEIGHT)
+  end
+
+  -- Calculate positioning to center the modal
+  local start_row = math.floor((screen_height - total_height) / 2)
+  local start_col = math.floor((screen_width - total_width) / 2)
+
+  -- Layout dimensions
+  local content_height = total_height - HEADER_HEIGHT - GAP_BETWEEN_WINDOWS
+
+  -- Validate content area
+  if content_height <= 0 then
+    return nil, "Content height too small after header and gaps"
+  end
+
+  -- Use proportions from config
+  local proportions = layout_config.proportions
+
+  -- Window splits using proportions
+  local list_width = math.floor(total_width * proportions.list)
+  -- Subtract gap to align with header
+  local preview_width = math.floor(total_width * proportions.preview) - 2
+
+  -- Validate calculated widths
+  if list_width <= 0 or preview_width <= 0 then
+    return nil, "Calculated window widths are invalid"
+  end
+
+  local layout = {
+    total_width = total_width,
+    total_height = total_height,
+    start_row = start_row,
+    start_col = start_col,
+    header_height = HEADER_HEIGHT,
+    gap_between_windows = GAP_BETWEEN_WINDOWS,
+
+    -- Header window (full width at top)
+    header = {
+      width = total_width,
+      height = HEADER_HEIGHT,
+      row = start_row,
+      col = start_col,
+    },
+
+    -- List window (left side, below header)
+    list = {
+      width = list_width,
+      height = content_height,
+      row = start_row + HEADER_HEIGHT + GAP_BETWEEN_WINDOWS,
+      col = start_col,
+    },
+
+    -- Preview window (right side, below header)
+    preview = {
+      width = preview_width,
+      height = content_height,
+      row = start_row + HEADER_HEIGHT + GAP_BETWEEN_WINDOWS,
+      col = start_col + list_width + 3, -- +3 for prettier gap
+    },
+  }
+
+  return layout, nil
+end
+
+---Create a scratch buffer with standard options for UI components
+---@param opts? {filetype?: string, buftype?: string, name?: string} Optional buffer configuration
+---@return number Buffer ID
+function M.create_scratch_buffer(opts)
+  opts = opts or {}
+  local buf_id = vim.api.nvim_create_buf(false, true)
+
+  local buf_opts = {
+    modifiable = false,
+    swapfile = false,
+    buftype = opts.buftype or "nofile",
+    bufhidden = "wipe",
+    buflisted = false,
+    filetype = opts.filetype or "text",
+    undolevels = -1,
+  }
+
+  for option, value in pairs(buf_opts) do
+    vim.api.nvim_set_option_value(option, value, { buf = buf_id })
+  end
+
+  if opts.name then
+    vim.api.nvim_buf_set_name(buf_id, opts.name)
+  end
+
+  return buf_id
+end
+
+---Create a floating window with standard configuration
+---@param params {buf_id: number, config: table, opts: table} Window creation parameters
+---@param params.buf_id number Buffer ID for the window
+---@param params.config table Window configuration (width, height, row, col, focusable)
+---@param params.opts table Window options to set with nvim_set_option_value
+---@return number|nil win_id Window ID on success, nil on error
+---@return string|nil error_message Error message on failure, nil on success
+function M.create_floating_window(params)
+  local logger = require("store.logger")
+
+  if not params or type(params) ~= "table" then
+    return nil, "Parameters must be a table"
+  end
+
+  if not params.buf_id or not vim.api.nvim_buf_is_valid(params.buf_id) then
+    return nil, "buf_id must be a valid buffer ID"
+  end
+
+  if not params.config or type(params.config) ~= "table" then
+    return nil, "config must be a table"
+  end
+
+  if not params.opts or type(params.opts) ~= "table" then
+    return nil, "opts must be a table"
+  end
+
+  local config = params.config
+
+  -- Build window configuration with standard values
+  local win_config = {
+    relative = "editor",
+    style = "minimal",
+    width = config.width,
+    height = config.height,
+    row = config.row,
+    col = config.col,
+    border = "rounded",
+    zindex = 50,
+    focusable = config.focusable,
+  }
+
+  -- Create the window
+  local win_id = vim.api.nvim_open_win(params.buf_id, false, win_config)
+  if not win_id then
+    return nil, "Failed to create window"
+  end
+
+  -- Common window options shared across UI components
+  local common_opts = {
+    number = false,
+    relativenumber = false,
+    signcolumn = "no",
+    foldcolumn = "0",
+    colorcolumn = "",
+  }
+
+  -- Merge common options with component-specific options
+  local final_opts = vim.tbl_deep_extend("force", common_opts, params.opts)
+
+  -- Set window options
+  for option, value in pairs(final_opts) do
+    local success, err = pcall(vim.api.nvim_set_option_value, option, value, { win = win_id })
+    if not success then
+      logger.warn(string.format("Failed to set window option %s: %s", option, err))
+    end
+  end
+
+  return win_id, nil
+end
+
+---Set lines in a buffer, handling modifiable state automatically
+---@param buf_id number Buffer ID
+---@param lines string[] Lines to set in the buffer
+function M.set_lines(buf_id, lines)
+  vim.api.nvim_set_option_value("modifiable", true, { buf = buf_id })
+  vim.api.nvim_buf_set_lines(buf_id, 0, -1, false, lines)
+  vim.api.nvim_set_option_value("modifiable", false, { buf = buf_id })
 end
 
 return M

@@ -26,7 +26,7 @@ local function _create_content_lines(current_sort, sort_types)
   local lines = {}
   for _, sort_type in ipairs(sort_types) do
     local checkmark = (sort_type == current_sort) and "✓ " or "  "
-    local label = sort.get_sort_label(sort_type)
+    local label = sort.sorts[sort_type].label
     table.insert(lines, checkmark .. label)
   end
   return lines
@@ -119,7 +119,7 @@ end
 local function _create_window(buf_id)
   -- Get modal layout information
   local config = require("store.config").get()
-  local layout = config.computed_layout
+  local layout = config.layout
 
   local win_width = 30
   local win_height = 3 -- only three sorting options right now
@@ -230,14 +230,13 @@ function M.open(config)
     vim.ui.select(sort_types, {
       prompt = "Sort by:",
       format_item = function(item)
-        return sort.get_sort_label(item)
+        return sort.sorts[item].label
       end,
     }, function(choice)
       if choice then
         config.on_value(choice)
-      else
-        config.on_exit()
       end
+      config.on_exit()
     end)
   end
 end

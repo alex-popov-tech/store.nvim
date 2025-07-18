@@ -10,7 +10,7 @@ local logger = require("store.logger")
 ---@field timestamp number Unix timestamp when the item was cached
 
 ---@class PluginsCacheItem
----@field content PluginsData Plugin data structure
+---@field content Database Plugin data structure
 ---@field timestamp number Unix timestamp when the item was cached
 
 ---@class ReadmeInfo
@@ -185,7 +185,7 @@ function M.save_readme(plugin_url, content)
 end
 
 ---Save plugins data to cache
----@param content PluginsData The plugins data to save
+---@param content Database The plugins data to save
 ---@return boolean success True if successfully saved
 function M.save_plugins(content)
   if not content then
@@ -284,7 +284,7 @@ function M.get_readme(plugin_url)
 end
 
 ---Get cached plugins data
----@return PluginsData content The plugins data
+---@return Database content The plugins data
 ---@return boolean is_valid True if cache hit and content is valid
 function M.list_plugins()
   -- Check memory cache first
