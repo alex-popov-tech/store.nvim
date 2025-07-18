@@ -1,3 +1,4 @@
+local logger = require("store.logger")
 local WindowManager = {}
 
 ---@class WindowManager
@@ -52,7 +53,6 @@ function WindowManager:on_window_closed()
 
   self.is_closing = true
 
-  local logger = require("store.logger")
   logger.debug("Window closed, initiating graceful shutdown")
 
   -- Close all components with individual error handling

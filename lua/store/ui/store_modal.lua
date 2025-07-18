@@ -1,4 +1,4 @@
-local http = require("store.http")
+local database = require("store.database")
 local cache = require("store.cache")
 local validators = require("store.validators")
 local utils = require("store.utils")
@@ -7,17 +7,24 @@ local list = require("store.ui.list")
 local preview = require("store.ui.preview")
 local logger = require("store.logger")
 local WindowManager = require("store.ui.window_manager")
+local keymaps = require("store.keymaps")
 
 local M = {}
 
--- Internal UI configuration (zindex, border, etc.)
-local UI_CONFIG = {
-  border = "rounded",
-  zindex = 50,
-}
+-- Helper function for safe cleanup operations with consistent error handling
+---@param operation fun() Operation to perform
+---@param error_message string Error message to log if operation fails
+---@return boolean success True if operation succeeded
+local function safe_cleanup(operation, error_message)
+  local success, err = pcall(operation)
+  if not success then
+    logger.warn(error_message .. ": " .. tostring(err))
+  end
+  return success
+end
 
 -- Validate modal configuration
----@param config ComputedConfig|nil Modal configuration to validate
+---@param config StoreModalConfig|nil Modal configuration to validate
 ---@return string|nil error_message Error message if validation fails, nil if valid
 local function validate(config)
   if config == nil then
@@ -70,15 +77,18 @@ local function validate(config)
   return nil
 end
 
+---@class StoreModalConfig : PluginConfig
+---@field on_close? fun(): void Callback when modal is closed
+
 ---@class StoreModal
----@field config ComputedConfig Complete computed configuration
----@field layout ComputedLayout Window layout calculations
+---@field config StoreModalConfig Complete computed configuration
 ---@field is_open boolean Modal open status
 ---@field state table Modal state (filter_query, repos, etc.)
----@field heading HeadingWindow Header component instance
+---@field heading Heading Header component instance
 ---@field list ListWindow List component instance
----@field preview PreviewWindow Preview component instance
----@field open fun(): boolean Open the modal and render all components
+---@field preview Preview Preview component instance
+---@field open fun(): void Open the modal and render all components
+---@field focus fun(): void Focus list component
 ---@field close fun(): boolean Close the modal and all components
 
 -- StoreModal class - stateful orchestrator for UI components
@@ -86,11 +96,12 @@ local StoreModal = {}
 StoreModal.__index = StoreModal
 
 ---Create a new modal instance
----@param config ComputedConfig Complete computed configuration from config.lua
----@return StoreModal StoreModal instance
+---@param config StoreModalConfig Complete computed configuration with on_close callback
+---@return StoreModal|nil instance StoreModal instance on success, nil on error
+---@return string|nil error Error message on failure, nil on success
 function M.new(config)
   if not config then
-    error("Configuration required. StoreModal expects config from config.lua")
+    return nil, "Configuration required. StoreModal expects config from config.lua"
   end
 
   logger.debug("Creating new StoreModal instance")
@@ -99,281 +110,425 @@ function M.new(config)
   local error_msg = validate(config)
   if error_msg then
     logger.error("Modal configuration validation failed: " .. error_msg)
-    error("Modal configuration validation failed: " .. error_msg)
+    return nil, "Modal configuration validation failed: " .. error_msg
   end
 
-  -- Initialize list component with calculated config.computed_layout
   local instance = {
     config = config,
-    layout = config.computed_layout,
     is_open = false,
-    window_manager = nil, -- Will be set after instance is created
     state = {
       filter_query = "",
+      sort_config = {
+        type = "default", -- Current sort type
+      },
       repos = {},
       filtered_repos = {},
       current_focus = "list", -- Track current focused component: "list" or "preview"
       current_repository = nil, -- Track currently selected repository
       is_refreshing = false, -- Track refresh state to prevent concurrent refreshes
+      focus_augroup = nil, -- Autocmd group for focus detection
     },
-
-    -- UI component instances (ready for rendering)
-    heading = heading.new({
-      width = config.computed_layout.header.width,
-      height = config.computed_layout.header.height,
-      row = config.computed_layout.header.row,
-      col = config.computed_layout.header.col,
-      border = UI_CONFIG.border,
-      zindex = UI_CONFIG.zindex,
-    }),
-
-    preview = preview.new({
-      width = config.computed_layout.preview.width,
-      height = config.computed_layout.preview.height,
-      row = config.computed_layout.preview.row,
-      col = config.computed_layout.preview.col,
-      border = UI_CONFIG.border,
-      zindex = UI_CONFIG.zindex,
-      keymap = {}, -- Will be populated below
-    }),
-
-    list = list.new({
-      width = config.computed_layout.list.width,
-      height = config.computed_layout.list.height,
-      row = config.computed_layout.list.row,
-      col = config.computed_layout.list.col,
-      border = UI_CONFIG.border,
-      zindex = UI_CONFIG.zindex,
-      keymap = {}, -- Will be populated below
-      cursor_debounce_delay = config.preview_debounce,
-    }),
   }
 
-  -- Create modal keymaps with access to instance
-  local modal_keymaps = {
-    [config.keybindings.close] = function()
-      instance:close()
-      if config.on_close then
-        config.on_close()
-      end
-    end,
-    ["<esc>"] = function()
-      instance:close()
-      if config.on_close then
-        config.on_close()
-      end
-    end,
-    [config.keybindings.switch_focus] = function()
-      if instance.state.current_focus == "list" then
-        instance.preview:focus()
-        instance.state.current_focus = "preview"
-      else
-        -- Save cursor position when switching away from preview
-        instance.preview:save_cursor_on_blur()
-        instance.list:focus()
-        instance.state.current_focus = "list"
-      end
-    end,
-    [config.keybindings.filter] = function()
-      vim.ui.input({ prompt = "Filter repositories: ", default = instance.state.filter_query }, function(input)
-        if input ~= nil then
-          -- Update filter query in state
-          instance.state.filter_query = input
-
-          logger.debug("Filter query updated: '" .. input .. "'")
-
-          -- Filter repositories based on query (case-insensitive)
-          if input == "" then
-            instance.state.filtered_repos = instance.state.repos
-            logger.debug("Filter cleared, showing all repositories")
-          else
-            local query_lower = input:lower()
-            instance.state.filtered_repos = {}
-            for _, repo in ipairs(instance.state.repos) do
-              if
-                repo.full_name:lower():find(query_lower)
-                or (repo.description and repo.description:lower():find(query_lower))
-              then
-                table.insert(instance.state.filtered_repos, repo)
-              end
-            end
-          end
-
-          logger.debug(
-            "Filter applied: "
-              .. #instance.state.filtered_repos
-              .. " of "
-              .. #instance.state.repos
-              .. " repositories match"
-          )
-
-          -- Update heading with new filter stats
-          instance.heading:render({
-            query = instance.state.filter_query,
-            state = "ready",
-            filtered_count = #instance.state.filtered_repos,
-            total_count = #instance.state.repos,
-          })
-
-          -- Re-render list with filtered results
-          instance.list:render({
-            state = "ready",
-            repositories = instance.state.filtered_repos,
-          })
-        end
-      end)
-    end,
-    [config.keybindings.help] = function()
-      local help = require("store.ui.help")
-      help.open()
-    end,
-    [config.keybindings.refresh] = function()
-      instance:refresh()
-    end,
-    [config.keybindings.open] = function()
-      if instance.state.current_repository and instance.state.current_repository.html_url then
-        local success = utils.open_url(instance.state.current_repository.html_url)
-        if not success then
-          logger.error("Failed to open URL: " .. instance.state.current_repository.html_url)
-        else
-          logger.debug("Opened repository URL: " .. instance.state.current_repository.html_url)
-        end
-      else
-        logger.warn("No repository selected")
-      end
-    end,
-  }
-
-  -- Update component configs with keymaps
-  instance.list.config.keymap = modal_keymaps
-  instance.list.config.on_repo = function(repository)
-    -- Track current repository for keybinding handlers
-    instance.state.current_repository = repository
-
-    http.get_readme(repository.full_name, function(data)
-      if data.error then
-        logger.error("Error fetching README for " .. repository.full_name .. ": " .. data.error)
-        instance.preview:render({
-          state = "error",
-          error_message = data.error,
-          error_stack = data.stack,
-          readme_id = repository.full_name,
-        })
-      else
-        instance.preview:render({
-          state = "ready",
-          content = data.body,
-          readme_id = repository.full_name,
-        })
-      end
-    end)
+  -- Create UI component instances first
+  local heading_instance, heading_error = heading.new({
+    width = config.layout.header.width,
+    height = config.layout.header.height,
+    row = config.layout.header.row,
+    col = config.layout.header.col,
+  })
+  if heading_error then
+    logger.error("Failed to create heading component: " .. heading_error)
+    return nil, "Failed to create heading component: " .. heading_error
   end
-  instance.preview.config.keymap = modal_keymaps
 
-  -- Re-create buffers with new keymaps
-  instance.list.buf_id = instance.list:_create_buffer()
-  instance.preview.buf_id = instance.preview:_create_buffer()
+  local preview_instance, preview_error = preview.new({
+    width = config.layout.preview.width,
+    height = config.layout.preview.height,
+    row = config.layout.preview.row,
+    col = config.layout.preview.col,
+    keymaps_applier = keymaps.make_keymaps_for_preview(instance),
+  })
+  if preview_error then
+    logger.error("Failed to create preview component: " .. preview_error)
+    return nil, "Failed to create preview component: " .. preview_error
+  end
 
-  -- Create WindowManager after instance is fully constructed
+  local list_instance, list_error = list.new({
+    width = config.layout.list.width,
+    height = config.layout.list.height,
+    row = config.layout.list.row,
+    col = config.layout.list.col,
+    cursor_debounce_delay = config.preview_debounce,
+    max_lengths = { full_name = config.full_name_limit },
+    list_fields = config.list_fields,
+    keymaps_applier = keymaps.make_keymaps_for_list(instance),
+    on_repo = function(repository)
+      instance:on_repo(repository)
+    end,
+  })
+  if list_error then
+    logger.error("Failed to create list component: " .. list_error)
+    return nil, "Failed to create list component: " .. list_error
+  end
+
+  instance.heading = heading_instance
+  instance.preview = preview_instance
+  instance.list = list_instance
   instance.window_manager = WindowManager:new(function()
     -- Modal-level cleanup: reset state and call on_close callback
     instance.is_open = false
-    if config.on_close then
-      config.on_close()
-    end
+    config.on_close()
   end)
 
   setmetatable(instance, StoreModal)
-  return instance
+  return instance, nil
+end
+
+---@param repository Repository
+function StoreModal:on_repo(repository)
+  -- Track current repository for keybinding handlers
+  self.state.current_repository = repository
+
+  database.get_readme(repository.full_name, function(content, error)
+    if error then
+      logger.error("Error fetching README for " .. repository.full_name .. ": " .. error)
+      local render_error = self.preview:render({ state = "error", content = { error } })
+      if render_error then
+        logger.error("Failed to render preview error state: " .. render_error)
+      end
+      return
+    end
+
+    local render_error = self.preview:render({ state = "ready", content = content, readme_id = repository.full_name })
+    if render_error then
+      logger.error("Failed to render preview ready state: " .. render_error)
+    end
+  end)
+end
+
+---Setup focus detection for auto-resize functionality
+---@return nil
+function StoreModal:_setup_focus_detection()
+  -- Auto-resize is always enabled
+
+  logger.debug("Setting up focus detection for auto-resize")
+
+  -- Create autocmd group for focus detection
+  self.state.focus_augroup = vim.api.nvim_create_augroup("StoreModalFocusResize", { clear = true })
+
+  -- Setup WinEnter autocmd
+  vim.api.nvim_create_autocmd("WinEnter", {
+    group = self.state.focus_augroup,
+    callback = function()
+      logger.debug("WinEnter event triggered")
+      self:_on_focus_change()
+    end,
+  })
+
+  logger.debug("Focus detection setup complete")
+end
+
+---Handle focus change events with validation and debouncing
+---@return nil
+function StoreModal:_on_focus_change()
+  logger.debug("_on_focus_change called")
+
+  if not self.is_open then
+    logger.debug("Focus change ignored: is_open=" .. tostring(self.is_open))
+    return
+  end
+
+  -- Validate that components and window IDs exist
+  local list_win_id = self.list:get_window_id()
+  local preview_win_id = self.preview:get_window_id()
+  if not self.list or not self.preview or not list_win_id or not preview_win_id then
+    logger.warn("Cannot handle focus change: components or window IDs not initialized")
+    return
+  end
+
+  local current_win = vim.api.nvim_get_current_win()
+  local focused_component = nil
+
+  logger.debug(
+    "Current window: "
+      .. current_win
+      .. ", list window: "
+      .. (list_win_id or "nil")
+      .. ", preview window: "
+      .. (preview_win_id or "nil")
+  )
+
+  -- Determine which component has focus with nil-safe comparisons
+  if current_win == list_win_id then
+    focused_component = "list"
+  elseif current_win == preview_win_id then
+    focused_component = "preview"
+  else
+    -- Focus is not on our modal components, ignore
+    logger.debug("Focus is not on modal components, ignoring")
+    return
+  end
+
+  logger.debug(
+    "Focused component: " .. focused_component .. ", current focus state: " .. (self.state.current_focus or "nil")
+  )
+
+  -- Check if focus actually changed
+  if focused_component == self.state.current_focus then
+    return
+  end
+
+  -- Update focus state
+  self.state.current_focus = focused_component
+
+  -- Trigger resize immediately (no debouncing)
+  vim.schedule(function()
+    -- Re-validate modal state before resizing (race condition protection)
+    if self.is_open then
+      self:_resize_windows_for_focus(focused_component)
+    end
+  end)
+end
+
+---Resize windows based on focused component
+---@param focused_component string Component that should be focused ("list" or "preview")
+---@return nil
+function StoreModal:_resize_windows_for_focus(focused_component)
+  logger.debug("_resize_windows_for_focus called with: " .. focused_component)
+
+  if not self.is_open then
+    logger.debug("Resize aborted: is_open=" .. tostring(self.is_open))
+    return
+  end
+
+  local config = require("store.config")
+  local plugin_config = config.get()
+
+  -- Get current proportions and swap them for focus effect
+  local current_proportions = plugin_config.proportions
+  local new_proportions = {
+    list = current_proportions.preview, -- swap them
+    preview = current_proportions.list, -- swap them
+  }
+
+  local new_layout, layout_error = config.update_layout(new_proportions)
+
+  if not new_layout then
+    logger.error(
+      "Failed to calculate new layout for focus: " .. focused_component .. " - " .. (layout_error or "unknown error")
+    )
+    return
+  end
+
+  local resize_errors = {}
+
+  -- Resize list window using component method
+  local list_error = self.list:resize(new_layout.list)
+  if list_error then
+    table.insert(resize_errors, "list: " .. list_error)
+  end
+
+  -- Resize preview window using component method
+  local preview_error = self.preview:resize(new_layout.preview)
+  if preview_error then
+    table.insert(resize_errors, "preview: " .. preview_error)
+  end
+
+  if #resize_errors == 0 then
+    logger.debug("Successfully resized windows for focus: " .. focused_component)
+  else
+    logger.warn("Partial resize failure for focus " .. focused_component .. ": " .. table.concat(resize_errors, ", "))
+  end
+end
+
+---Cleanup focus detection resources
+---@return nil
+function StoreModal:_cleanup_focus_detection()
+  -- No timer to clean up (removed debouncing)
+
+  -- Clean up autocmd group with consistent error handling
+  if self.state.focus_augroup then
+    safe_cleanup(function()
+      vim.api.nvim_del_augroup_by_id(self.state.focus_augroup)
+    end, "Failed to delete focus detection augroup during cleanup")
+    self.state.focus_augroup = nil
+  end
 end
 
 ---Open the modal and render all components
----@return boolean Success status
 function StoreModal:open()
   if self.is_open then
     logger.warn("Attempted to open modal that is already open")
-    return false
   end
 
   logger.debug("Opening StoreModal")
+  logger.debug("Auto-resize is always enabled")
 
-  self.heading:open()
-  self.list:open()
-  self.preview:open()
+  -- Open components with error handling
+  local heading_error = self.heading:open()
+  if heading_error then
+    logger.error("Failed to open heading component: " .. heading_error)
+    return
+  end
+  
+  local list_error = self.list:open()
+  if list_error then
+    logger.error("Failed to open list component: " .. list_error)
+    self.heading:close() -- Clean up already opened components
+    return
+  end
+  
+  local preview_error = self.preview:open()
+  if preview_error then
+    logger.error("Failed to open preview component: " .. preview_error)
+    self.heading:close() -- Clean up already opened components
+    self.list:close()
+    return
+  end
+  
   self.is_open = true
 
   -- Register all components with the window manager for coordinated closing
-  self.window_manager:register_component(self.heading.win_id, function()
-    self.heading:close()
-  end, "heading")
-  self.window_manager:register_component(self.list.win_id, function()
-    self.list:close()
-  end, "list")
-  self.window_manager:register_component(self.preview.win_id, function()
-    self.preview:close()
-  end, "preview")
+  local heading_win_id = self.heading:get_window_id()
+  local list_win_id = self.list:get_window_id()
+  local preview_win_id = self.preview:get_window_id()
+  
+  if heading_win_id then
+    self.window_manager:register_component(heading_win_id, function()
+      self.heading:close()
+    end, "heading")
+  end
+  if list_win_id then
+    self.window_manager:register_component(list_win_id, function()
+      self.list:close()
+    end, "list")
+  end
+  if preview_win_id then
+    self.window_manager:register_component(preview_win_id, function()
+      self.preview:close()
+    end, "preview")
+  end
 
   logger.debug("StoreModal components opened successfully")
 
-  -- Focus the list component by default
-  self.list:focus()
+  -- Setup focus detection for auto-resize first
+  self:_setup_focus_detection()
 
-  http.fetch_plugins(function(data, err)
+  -- Focus the list component by default
+  local focus_error = self.list:focus()
+  if focus_error then
+    logger.warn("Failed to focus list component: " .. focus_error)
+  end
+
+  -- Trigger initial resize for list focus (auto-resize is always enabled)
+  logger.debug("Triggering initial resize for list focus")
+  vim.schedule(function()
+    self:_resize_windows_for_focus("list")
+  end)
+
+  database.fetch_plugins(function(data, err)
     if err then
       -- Log the error and show user-friendly message
-      logger.error("Failed to fetch plugin data: " .. tostring(err))
-      self.heading:render({
-        query = "",
-        state = "error",
-        filtered_count = 0,
-        total_count = 0,
-      })
+      logger.error("Failed to fetch plugin data: " .. err)
+      self.heading:render({ state = "error" })
       self.list:render({ state = "error" })
-      self.preview:render({
-        state = "error",
-        error_message = tostring(err),
-        readme_id = nil,
-      })
+      self.preview:render({ state = "error", content = { err } })
       return
     end
+
     if not data then
       logger.error("No plugin data received from server")
-      self.heading:render({
-        query = "",
-        state = "error",
-        filtered_count = 0,
-        total_count = 0,
-      })
+      self.heading:render({ state = "error" })
       self.list:render({ state = "error" })
-      self.preview:render({
-        state = "error",
-        error_message = "No plugin data received from server",
-        readme_id = nil,
-      })
+      self.preview:render({ state = "error", content = { "No plugin data received from server" } })
       return
     end
 
     -- Store repositories in modal state
-    self.state.repos = data.repositories or {}
-    self.state.filtered_repos = data.repositories or {}
+    self.state.repos = data.items or {}
+    self.state.filtered_repos = data.items or {}
 
-    logger.log("Plugin data loaded successfully: " .. tostring(data.total_repositories) .. " repositories")
+    -- Update list component configuration using public API
+    self.list:update_config({
+      max_lengths = {
+        full_name = math.min(data.meta.max_full_name_length or self.config.full_name_limit, self.config.full_name_limit),
+        pretty_stargazers_count = data.meta.max_pretty_stargazers_length or 8,
+        pretty_forks_count = data.meta.max_pretty_forks_length or 8,
+        pretty_open_issues_count = data.meta.max_pretty_issues_length or 8,
+        pretty_pushed_at = 13 + (data.meta.max_pretty_pushed_at_length or 14)
+      }
+    })
+
+    logger.debug("Plugin data loaded successfully: " .. tostring(data.meta.total_count) .. " repositories")
 
     self.heading:render({
-      query = "",
       state = "ready",
-      filtered_count = data.total_repositories,
-      total_count = data.total_repositories,
+      filtered_count = data.meta.total_count,
+      total_count = data.meta.total_count,
     })
-
-    -- Render repositories in list component
     self.list:render({
       state = "ready",
-      repositories = data.repositories or {},
+      items = data.items or {},
     })
   end)
+end
 
-  return true
+---Apply sorting to current filtered repositories
+---@param sort_type string Sort type to apply
+function StoreModal:apply_sort(sort_type)
+  local sort = require("store.sort")
+
+  -- Update sort state
+  self.state.sort_config.type = sort_type
+
+  -- For default sorting, restore original order by re-filtering from original repos
+  if sort_type == "default" then
+    self:_apply_filter()
+  else
+    -- Apply sort to current filtered repositories
+    self.state.filtered_repos = sort.sort_repositories(self.state.filtered_repos, sort_type)
+  end
+
+  -- Update header with new sort status
+  local heading_error = self.heading:render({
+    filter_query = self.state.filter_query,
+    sort_type = sort_type,
+    state = "ready",
+    filtered_count = #self.state.filtered_repos,
+    total_count = #self.state.repos,
+  })
+  if heading_error then
+    logger.error("Failed to render heading after sort: " .. heading_error)
+  end
+
+  -- Re-render list with sorted data
+  local list_error = self.list:render({
+    state = "ready",
+    items = self.state.filtered_repos,
+  })
+  if list_error then
+    logger.error("Failed to render list after sort: " .. list_error)
+  end
+
+  logger.debug("Applied sort: " .. sort_type)
+end
+
+---Focus the modal by focusing the list component
+---@return nil
+function StoreModal:focus()
+  if not self.is_open then
+    logger.warn("Attempted to focus modal that is not open")
+    return
+  end
+
+  logger.debug("Focusing StoreModal (list component)")
+  local focus_error = self.list:focus()
+  if focus_error then
+    logger.warn("Failed to focus list component: " .. focus_error)
+  else
+    self.state.current_focus = "list"
+  end
 end
 
 ---Close the modal and all components
@@ -386,7 +541,10 @@ function StoreModal:close()
 
   logger.debug("Closing StoreModal")
 
-  -- Clean up window manager first
+  -- Clean up focus detection first
+  self:_cleanup_focus_detection()
+
+  -- Clean up window manager
   self.window_manager:cleanup()
 
   -- Save cursor position before closing
@@ -394,17 +552,32 @@ function StoreModal:close()
     self.preview:save_cursor_on_blur()
   end
 
-  -- Close all components
+  -- Close all components with error handling
+  local close_errors = {}
+  
   if self.heading then
-    self.heading:close()
+    local heading_error = self.heading:close()
+    if heading_error then
+      table.insert(close_errors, "heading: " .. heading_error)
+    end
   end
 
   if self.list then
-    self.list:close()
+    local list_error = self.list:close()
+    if list_error then
+      table.insert(close_errors, "list: " .. list_error)
+    end
   end
 
   if self.preview then
-    self.preview:close()
+    local preview_error = self.preview:close()
+    if preview_error then
+      table.insert(close_errors, "preview: " .. preview_error)
+    end
+  end
+  
+  if #close_errors > 0 then
+    logger.warn("Some components failed to close: " .. table.concat(close_errors, ", "))
   end
 
   self.is_open = false
@@ -427,7 +600,8 @@ function StoreModal:refresh()
 
   -- Show refreshing state in header
   self.heading:render({
-    query = self.state.filter_query,
+    filter_query = self.state.filter_query,
+    sort_type = self.state.sort_config.type,
     state = "loading",
     filtered_count = 0,
     total_count = 0,
@@ -440,14 +614,15 @@ function StoreModal:refresh()
   end
 
   -- Force refresh plugins data
-  http.fetch_plugins(function(data, err)
+  database.fetch_plugins(function(data, err)
     self.state.is_refreshing = false
 
     if err then
       logger.error("Failed to refresh plugins data: " .. tostring(err))
       -- Show error state
       self.heading:render({
-        query = self.state.filter_query,
+        filter_query = self.state.filter_query,
+        sort_type = self.state.sort_config.type,
         state = "error",
         filtered_count = 0,
         total_count = 0,
@@ -455,7 +630,7 @@ function StoreModal:refresh()
       self.list:render({ state = "error" })
       self.preview:render({
         state = "error",
-        error_message = "Failed to refresh: " .. tostring(err),
+        content = { "Failed to refresh: " .. tostring(err) },
         readme_id = nil,
       })
       return
@@ -465,7 +640,8 @@ function StoreModal:refresh()
       logger.error("No plugins data received during refresh")
       -- Show error state
       self.heading:render({
-        query = self.state.filter_query,
+        filter_query = self.state.filter_query,
+        sort_type = self.state.sort_config.type,
         state = "error",
         filtered_count = 0,
         total_count = 0,
@@ -473,14 +649,39 @@ function StoreModal:refresh()
       self.list:render({ state = "error" })
       self.preview:render({
         state = "error",
-        error_message = "No plugins data received during refresh",
+        content = { "No plugins data received during refresh" },
         readme_id = nil,
       })
       return
     end
 
     -- Update state with new data
-    self.state.repos = data.repositories or {}
+    self.state.repos = data.items or {}
+
+    -- Update list component max_lengths with actual data from meta (only for configured fields)
+    if data.meta then
+      -- Only update max_lengths for fields that are actually configured to display
+      local config_updates = { max_lengths = {} }
+      if vim.tbl_contains(self.config.list_fields, "full_name") then
+        config_updates.max_lengths.full_name =
+          math.min(data.meta.max_full_name_length or self.config.full_name_limit, self.config.full_name_limit)
+      end
+      if vim.tbl_contains(self.config.list_fields, "stars") then
+        config_updates.max_lengths.pretty_stargazers_count = data.meta.max_pretty_stargazers_length or 8
+      end
+      if vim.tbl_contains(self.config.list_fields, "forks") then
+        config_updates.max_lengths.pretty_forks_count = data.meta.max_pretty_forks_length or 8
+      end
+      if vim.tbl_contains(self.config.list_fields, "issues") then
+        config_updates.max_lengths.pretty_open_issues_count = data.meta.max_pretty_issues_length or 8
+      end
+      if vim.tbl_contains(self.config.list_fields, "pushed_at") then
+        config_updates.max_lengths.pretty_pushed_at = 13 + (data.meta.max_pretty_pushed_at_length or 14)
+      end
+      
+      -- Apply config updates using public API
+      self.list:update_config(config_updates)
+    end
 
     -- Re-apply existing filter
     self:_apply_filter()
@@ -498,17 +699,25 @@ function StoreModal:_apply_filter()
   if self.state.filter_query == "" then
     self.state.filtered_repos = self.state.repos
   else
-    local query_lower = self.state.filter_query:lower()
+    local filter_predicate, error_msg = utils.create_advanced_filter(self.state.filter_query)
+    if error_msg then
+      logger.error("Invalid filter query during refresh: " .. error_msg)
+      -- Fallback to showing all repositories if filter is invalid
+      self.state.filtered_repos = self.state.repos
+      return
+    end
+
     self.state.filtered_repos = {}
     for _, repo in ipairs(self.state.repos) do
-      if
-        repo.full_name:lower():find(query_lower)
-        or (repo.description and repo.description:lower():find(query_lower))
-      then
+      if filter_predicate(repo) then
         table.insert(self.state.filtered_repos, repo)
       end
     end
   end
+
+  -- After filtering, re-apply current sort
+  local sort = require("store.sort")
+  self.state.filtered_repos = sort.sort_repositories(self.state.filtered_repos, self.state.sort_config.type)
 end
 
 ---Re-render all components after refresh
@@ -516,7 +725,8 @@ end
 function StoreModal:_render_after_refresh()
   -- Re-render heading with new stats
   self.heading:render({
-    query = self.state.filter_query,
+    filter_query = self.state.filter_query,
+    sort_type = self.state.sort_config.type,
     state = "ready",
     filtered_count = #self.state.filtered_repos,
     total_count = #self.state.repos,
@@ -525,7 +735,7 @@ function StoreModal:_render_after_refresh()
   -- Re-render list with filtered results
   self.list:render({
     state = "ready",
-    repositories = self.state.filtered_repos,
+    items = self.state.filtered_repos,
   })
 
   -- Clear preview since repository data has changed

@@ -10,7 +10,10 @@ local current_modal = nil
 ---Setup the store.nvim plugin with configuration
 ---@param args? UserConfig User configuration to merge with defaults
 M.setup = function(args)
-  config.setup(args)
+  local setup_error = config.setup(args)
+  if setup_error then
+    error(setup_error)
+  end
   -- Setup logger with logging level from configuration
   logger.setup({ logging = config.get().logging })
 end
@@ -26,31 +29,27 @@ end
 
 ---Open the store modal interface
 M.open = function()
-  -- Atomic check and set to prevent race conditions
+  -- If modal is already open, focus it instead of creating a new one
   if current_modal then
+    current_modal:focus()
     return
   end
 
   logger.debug("Opening store modal")
 
-  local modal_config = config.get()
-  modal_config.on_close = function()
-    -- Clear current_modal reference when modal is closed via keybinding
-    logger.debug("Modal closed via keybinding, clearing reference")
-    current_modal = nil
+  local modal_config = vim.tbl_deep_extend("force", config.get(), {
+    on_close = function()
+      logger.debug("Modal closed via keybinding, clearing reference")
+      current_modal = nil
+    end,
+  })
+  local modal_instance, modal_error = StoreModal.new(modal_config)
+  if modal_error then
+    logger.error("Failed to create store modal: " .. modal_error)
+    error("Failed to create store modal: " .. modal_error)
   end
-
-  -- Create modal and immediately set reference to prevent race conditions
-  local modal = StoreModal.new(modal_config)
-  current_modal = modal -- Set reference immediately after creation
-
-  local success = modal:open()
-  if success then
-    logger.debug("Store modal opened successfully")
-  else
-    logger.error("Failed to open modal")
-    current_modal = nil -- Clear reference on failure
-  end
+  current_modal = modal_instance
+  current_modal:open()
 end
 
 return M
