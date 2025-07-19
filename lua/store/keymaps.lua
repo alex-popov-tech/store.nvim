@@ -12,6 +12,7 @@ local descriptions = {
   open = "store.nvim - Open repository in browser",
   switch_focus = "store.nvim - Switch focus between panes",
   sort = "store.nvim - Sort repositories",
+  intsall = "store.nvim - Install plugin",
 }
 
 -- Handler functions for each action
@@ -130,6 +131,12 @@ local handlers = {
       end,
     })
   end,
+
+  install = function(instance)
+    local html_url = instance.state.current_repository.html_url
+    vim.cmd([[q]])
+    require'lazy-install'.install(html_url)
+  end,
 }
 
 -- Private function to create keymap applier for specific actions
@@ -165,14 +172,14 @@ end
 ---@param instance StoreModal Modal instance
 ---@return fun(buf_id: number) Function to apply list keymaps to buffer
 function M.make_keymaps_for_list(instance)
-  return make_keymaps_for_actions(instance, { "close", "help", "switch_focus", "filter", "refresh", "sort", "open" })
+  return make_keymaps_for_actions(instance, { "close", "help", "switch_focus", "filter", "refresh", "sort", "open", "install" })
 end
 
 -- Public function to create keymap applier for preview component
 ---@param instance StoreModal Modal instance
 ---@return fun(buf_id: number) Function to apply preview keymaps to buffer
 function M.make_keymaps_for_preview(instance)
-  return make_keymaps_for_actions(instance, { "close", "help", "switch_focus", "filter", "refresh", "sort" })
+  return make_keymaps_for_actions(instance, { "close", "help", "switch_focus", "filter", "refresh", "sort", "install" })
 end
 
 return M
