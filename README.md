@@ -18,6 +18,7 @@ A Neovim plugin for browsing and discovering awesome Neovim plugins through an i
 {
   "alex-popov-tech/store.nvim",
   dependencies = {
+    "wwingyou/lazy-install.nvim", -- for auto install
     "OXY2DEV/markview.nvim", -- optional, for pretty readme preview / help window
   },
   cmd = "Store",

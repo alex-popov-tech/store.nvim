@@ -26,6 +26,7 @@ local help_items = {
   { keybinding = "<Esc>", action = "Close modal" },
   { keybinding = "<Tab>", action = "Switch focus" },
   { keybinding = "?", action = "Show help" },
+  { keybinding = "i", action = "Install plugin" },
 }
 
 ---Calculate column widths for help content
