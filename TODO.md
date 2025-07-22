@@ -203,6 +203,23 @@
   - Handle different plugin specification formats across package managers (lazy, packer, vim-pack)
   - Cache parsed lock file data and track installation state changes for dynamic updates
 
+- [ ] **35. Integrate blink.cmp completion for enhanced filtering experience**
+  - Replace basic filter input with blink.cmp-powered completion system
+  - Extract completion sources from cached repository data (authors, plugin names, tags, description keywords)
+  - Implement context-aware completions based on filtering syntax:
+    - `author:` prefix → complete with unique author names from repository data
+    - `name:` prefix → complete with plugin names and common name patterns
+    - `tags:` prefix → complete with available tags/categories from awesome-neovim sections
+    - `description:` prefix → complete with common keywords and phrases
+    - General completion → suggest field prefixes (`author:`, `name:`, `tags:`, `description:`) and popular values
+  - Support multi-field query completion with `;` separator awareness
+  - Maintain backward compatibility with existing advanced filtering syntax (#28)
+  - Add completion for combined queries (e.g., `author:nvim-; tags:completion`)
+  - Cache completion sources and refresh when repository data updates
+  - Consider optional dependency on blink.cmp with graceful fallback to basic input
+  - Improve discoverability of advanced filtering features through contextual suggestions
+  - Performance considerations: pre-compute completion sources for instant response
+
 ---
 
 ## 🔮 Future Enhancement Ideas (Optional)
