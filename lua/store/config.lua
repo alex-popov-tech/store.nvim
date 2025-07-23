@@ -267,7 +267,7 @@ end
 ---@return PluginConfig config The complete plugin configuration with computed layout
 function M.get()
   if not plugin_config then
-    error("Store.nvim has not been initialized ( forgot to call setup()?)")
+    M.setup({})
   end
   return plugin_config
 end
