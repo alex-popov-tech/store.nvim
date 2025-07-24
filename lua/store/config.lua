@@ -72,6 +72,7 @@ local DEFAULT_USER_CONFIG = {
     open = { "<cr>", "o" },
     switch_focus = { "<tab>", "<s-tab>" },
     sort = { "s" },
+    install = { "i" },
   },
 
   -- Behavior
