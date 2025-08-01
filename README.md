@@ -1,5 +1,5 @@
 <img alt="store.nvim heading image" src="https://github.com/user-attachments/assets/f42b94e4-e3b0-44dc-a8b3-ca59f0817d17" />
-<img alt="store.nvim ui" src="https://github.com/user-attachments/assets/45e97670-9b00-4b62-b5ea-48d8bc8eb09a" />
+<img alt="store.nvim ui" src="https://github.com/user-attachments/assets/adcd03ae-cfa3-4330-bea7-9f1031163191" />
 
 A Neovim plugin for browsing and discovering awesome Neovim plugins through an intuitive UI modal interface.
 
@@ -18,11 +18,11 @@ A Neovim plugin for browsing and discovering awesome Neovim plugins through an i
 {
   "alex-popov-tech/store.nvim",
   dependencies = {
-    "OXY2DEV/markview.nvim", -- optional, for pretty readme preview / help window
+    "OXY2DEV/markview.nvim", -- optional, for pretty readme preview
   },
   cmd = "Store",
   keys = {
-    { "<leader>s", "<cmd>Store<cr>", desc = "Open Plugin Store" },
+    { "<leader>s", function() require("store").open() end, desc = "Open store.nvim modal" },
   },
   opts = {
     -- optional configuration here
@@ -32,67 +32,38 @@ A Neovim plugin for browsing and discovering awesome Neovim plugins through an i
 
 ## Usage
 
-Open the plugin browser:
+Open the plugin browser with `:Store` or `require("store").open()`, and follow hints from help window.
 
-- **Command**: `:Store`
-- **Lua API**: `require("store").open()`
+## ❓ FAQ
 
-```lua
--- Custom keybinding
-vim.keymap.set("n", "<leader>s", require("store").open, { desc = "Open Plugin Store" })
-```
+<details>
+  <summary><strong>Why is my plugin not listed?</strong></summary>
 
-## Default Configuration
+  That usually happens in two cases:
+  - Your repository doesn't have the `neovim-plugin` or `neovim-plugins` tag.
+  - You added those tags less than 24h ago, and the crawler hasn't refreshed the database yet.
 
-```lua
-require("store").setup({
-  -- Window dimensions (percentages or absolute)
-  width = 0.8,
-  height = 0.8,
+  If neither applies — please [create an issue](https://github.com/alex-popov-tech/store.nvim/issues).
+</details>
 
-  -- Layout proportions (must sum to 1.0)
-  proportions = {
-    list = 0.3,     -- 30% for repository list
-    preview = 0.7,  -- 70% for preview pane
-  },
+<details>
+  <summary><strong>Why is my plugin not installable?</strong></summary>
 
-  -- Modal appearance
-  modal = {
-    border = "rounded",  -- Border style
-    zindex = 50,         -- Z-index for modal windows
-  },
+  A plugin is considered installable if it has at least one *valid* configuration block in `README.md`. If it isn’t marked as installable, try the following:
+  - Wait up to 24h after your last README.md change — the crawler needs time to re-fetch and re-process it.
+  - Make sure your code blocks contain valid Lua code. You can check this using `lua-ls` — just create a `tmp.lua` file and paste the code block into it.
+  - Adding clear context before code blocks helps too. For example, prefix it with something like: `lazy.nvim configuration example`.
+  - You can also check the latest debug artifacts from the README processor [here](https://github.com/alex-popov-tech/store.nvim.crawler/actions/workflows/crawler.yml).
 
-  -- Keybindings
-  keybindings = {
-    help = "?",             -- Show help
-    close = "q",            -- Close modal
-    filter = "f",           -- Open filter input
-    refresh = "r",          -- Refresh data
-    open = "<cr>",          -- Open selected repository
-    switch_focus = "<tab>", -- Switch focus between panes
-  },
+  If none of that helps, and your plugin should be installable — please [create an issue](https://github.com/alex-popov-tech/store.nvim/issues).
+</details>
 
-  -- Behavior
-  preview_debounce = 150,           -- ms delay for preview updates
-  cache_duration = 24 * 60 * 60,    -- 24 hours in seconds
-  logging = "off",                  -- Levels: off, error, warn, log, debug
-})
-```
+<details>
+  <summary><strong>I have a <code>lazy.nvim</code> config, but <code>store.nvim</code> suggests using a migrated version from <code>packer</code>/<code>vim-plug</code>.</strong></summary>
 
-## Keybindings
+  By default, native `lazy.nvim` configs are preferred. If you have one but it's not being used:
+  - Wait up to 24h after your last README.md change — the crawler may not have picked it up yet.
+  - Ensure your `lazy.nvim` config block is valid Lua. Again, `lua-ls` can help (try pasting it into a temporary `tmp.lua` file).
 
-| Key | Action | Description |
-|-----|--------|-------------|
-| `?` | Help | Show help modal |
-| `q` | Close | Close the store modal |
-| `f` | Filter | Open filter input |
-| `r` | Refresh | Hard reset caches and refresh all data from network |
-| `<CR>` | Open | Open repository in browser |
-| `<Tab>` | Switch Focus | Switch between panes |
-
-### Filter Mode
-
-| Key | Action |
-|-----|--------|
-| `<CR>` | Apply filter |
-| `<Esc>` | Cancel filter |
+  Still not working? Please [create an issue](https://github.com/alex-popov-tech/store.nvim/issues).
+</details>
