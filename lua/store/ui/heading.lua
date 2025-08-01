@@ -53,6 +53,8 @@ local M = {}
 ---@field sort_type string Current sort type
 ---@field filtered_count number Number of plugins after filtering
 ---@field total_count number Total number of plugins
+---@field installable_count number Number of installable plugins in current view
+---@field installed_count number Number of installed plugins in current view
 
 ---@class HeadingStateUpdate
 ---@field state string?
@@ -60,6 +62,8 @@ local M = {}
 ---@field sort_type string?
 ---@field filtered_count number?
 ---@field total_count number?
+---@field installable_count number? Number of installable plugins in current view
+---@field installed_count number? Number of installed plugins in current view
 
 ---@class Heading
 ---@field config HeadingConfig Window configuration
@@ -85,6 +89,8 @@ local DEFAULT_STATE = {
   sort_type = "default",
   filtered_count = 0,
   total_count = 0,
+  installable_count = 0,
+  installed_count = 0,
 }
 
 -- ASCII art for store.nvim
@@ -210,6 +216,30 @@ local function validate_state(state)
     end
   end
 
+  if state.installable_count ~= nil then
+    local installable_err =
+      validators.should_be_number(state.installable_count, "heading.installable_count must be nil or a number")
+    if installable_err then
+      return installable_err
+    end
+
+    if state.installable_count < 0 then
+      return "heading.installable_count must be non-negative, got: " .. state.installable_count
+    end
+  end
+
+  if state.installed_count ~= nil then
+    local installed_err =
+      validators.should_be_number(state.installed_count, "heading.installed_count must be nil or a number")
+    if installed_err then
+      return installed_err
+    end
+
+    if state.installed_count < 0 then
+      return "heading.installed_count must be non-negative, got: " .. state.installed_count
+    end
+  end
+
   return nil
 end
 
@@ -251,12 +281,16 @@ function Heading:open()
     return nil
   end
 
+  local store_config = require("store.config")
+  local plugin_config = store_config.get()
+
   local window_config = {
     width = self.config.width,
     height = self.config.height,
     row = self.config.row,
     col = self.config.col,
     focusable = false, -- Header should not be focusable
+    zindex = plugin_config.zindex.base,
   }
 
   -- Window options optimized for static header display
@@ -324,8 +358,13 @@ function Heading:_render_ready(state)
   end
   table.insert(content_lines, format_line(width, ASCII_ART[1], filter_text))
 
-  -- Line 1: ASCII art only (empty line)
-  table.insert(content_lines, format_line(width, ASCII_ART[2]))
+  -- Line 1: ASCII art + installable info
+  local installable_text = ""
+  if state.installable_count ~= nil and state.filtered_count ~= nil then
+    installable_text = string.format("%d of %d plugins are installable", 
+      state.installable_count, state.filtered_count)
+  end
+  table.insert(content_lines, format_line(width, ASCII_ART[2], installable_text))
 
   -- Line 2: ASCII art + sort info
   local sort_text = ""
@@ -337,8 +376,13 @@ function Heading:_render_ready(state)
   end
   table.insert(content_lines, format_line(width, ASCII_ART[3], sort_text))
 
-  -- Line 3: ASCII art only (empty line)
-  table.insert(content_lines, format_line(width, ASCII_ART[4]))
+  -- Line 3: ASCII art + installed info
+  local installed_text = ""
+  if state.installed_count ~= nil then
+    installed_text = string.format("%d plugins currently installed", 
+      state.installed_count)
+  end
+  table.insert(content_lines, format_line(width, ASCII_ART[4], installed_text))
 
   -- Line 4: ASCII art + plugin count
   local count_text = string.format("Showing %d of %d plugins", state.filtered_count, state.total_count)
@@ -434,6 +478,9 @@ function Heading:resize(layout_config)
     return "Cannot resize heading window: window not open or invalid"
   end
 
+  local store_config = require("store.config")
+  local plugin_config = store_config.get()
+
   local success, err = pcall(vim.api.nvim_win_set_config, self.state.win_id, {
     relative = "editor",
     width = layout_config.width,
@@ -442,7 +489,7 @@ function Heading:resize(layout_config)
     col = layout_config.col,
     style = "minimal",
     border = "rounded",
-    zindex = 50,
+    zindex = plugin_config.zindex.base,
   })
 
   if not success then

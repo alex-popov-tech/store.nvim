@@ -248,9 +248,10 @@ end
 
 ---Calculate window dimensions and positions for 3-window layout
 ---@param layout_config {width: number, height: number, proportions: {list: number, preview: number}}
+---@param popup_data {filter: {width: number, height: number}, sort: {lines_count: number, longest_line: number}, help: {lines_count: number, longest_line: number}}
 ---@return StoreModalLayout|nil layout Layout calculations for all windows, nil if validation fails
 ---@return string|nil error Error message if validation fails
-function M.calculate_layout(layout_config)
+function M.calculate_layout(layout_config, popup_data)
   -- Validate input config
   if not layout_config then
     return nil, "Layout config is required"
@@ -339,25 +340,77 @@ function M.calculate_layout(layout_config)
     },
   }
 
+  -- Validate popup data is provided
+  if not popup_data then
+    return nil, "Popup data is required"
+  end
+
+  if not popup_data.filter or not popup_data.filter.width or not popup_data.filter.height then
+    return nil, "filter dimensions (width, height) must be provided"
+  end
+
+  if not popup_data.sort or not popup_data.sort.lines_count or not popup_data.sort.longest_line then
+    return nil, "sort dimensions (lines_count, longest_line) must be provided"
+  end
+
+  if not popup_data.help or not popup_data.help.lines_count or not popup_data.help.longest_line then
+    return nil, "help dimensions (lines_count, longest_line) must be provided"
+  end
+
+  -- Filter popup: use provided dimensions
+  local filter_width = popup_data.filter.width
+  local filter_height = popup_data.filter.height
+  layout.filter = {
+    width = filter_width,
+    height = filter_height,
+    row = math.floor((screen_height - filter_height) / 2),
+    col = math.floor((screen_width - filter_width) / 2),
+  }
+
+  -- Sort popup: use provided dimensions with padding
+  local sort_width = popup_data.sort.longest_line + 4 -- +4 for border + padding
+  local sort_height = popup_data.sort.lines_count
+
+  layout.sort = {
+    width = sort_width,
+    height = sort_height,
+    row = math.floor((screen_height - sort_height) / 2),
+    col = math.floor((screen_width - sort_width) / 2),
+  }
+
+  -- Help popup: use provided dimensions with padding
+  local help_width = popup_data.help.longest_line + 4 -- +4 for border + padding
+  local help_height = popup_data.help.lines_count
+
+  layout.help = {
+    width = help_width,
+    height = help_height,
+    row = math.floor((screen_height - help_height) / 2),
+    col = math.floor((screen_width - help_width) / 2),
+  }
+
   return layout, nil
 end
 
 ---Create a scratch buffer with standard options for UI components
----@param opts? {filetype?: string, buftype?: string, name?: string} Optional buffer configuration
+---@param opts? {filetype?: string, buftype?: string, name?: string, modifiable?: boolean, readonly?: boolean} Optional buffer configuration
 ---@return number Buffer ID
 function M.create_scratch_buffer(opts)
   opts = opts or {}
-  local buf_id = vim.api.nvim_create_buf(false, true)
+  local buf_id = vim.api.nvim_create_buf(false, false)
 
-  local buf_opts = {
+  local default_buf_opts = {
     modifiable = false,
     swapfile = false,
-    buftype = opts.buftype or "nofile",
+    buftype = "nofile",
     bufhidden = "wipe",
     buflisted = false,
-    filetype = opts.filetype or "text",
+    filetype = "text",
     undolevels = -1,
   }
+
+  -- Merge passed options with defaults
+  local buf_opts = vim.tbl_deep_extend("force", default_buf_opts, opts)
 
   for option, value in pairs(buf_opts) do
     vim.api.nvim_set_option_value(option, value, { buf = buf_id })
@@ -379,6 +432,7 @@ end
 ---@return string|nil error_message Error message on failure, nil on success
 function M.create_floating_window(params)
   local logger = require("store.logger")
+  local store_config = require("store.config")
 
   if not params or type(params) ~= "table" then
     return nil, "Parameters must be a table"
@@ -397,6 +451,7 @@ function M.create_floating_window(params)
   end
 
   local config = params.config
+  local plugin_config = store_config.get()
 
   -- Build window configuration with standard values
   local win_config = {
@@ -407,12 +462,13 @@ function M.create_floating_window(params)
     row = config.row,
     col = config.col,
     border = "rounded",
-    zindex = 50,
+    zindex = config.zindex or plugin_config.zindex.popup,
     focusable = config.focusable,
   }
 
   -- Create the window
-  local win_id = vim.api.nvim_open_win(params.buf_id, false, win_config)
+  local enter_window = params.opts.focus or false
+  local win_id = vim.api.nvim_open_win(params.buf_id, enter_window, win_config)
   if not win_id then
     return nil, "Failed to create window"
   end
@@ -444,9 +500,15 @@ end
 ---@param buf_id number Buffer ID
 ---@param lines string[] Lines to set in the buffer
 function M.set_lines(buf_id, lines)
+  -- Store original modifiable state
+  local was_modifiable = vim.api.nvim_get_option_value("modifiable", { buf = buf_id })
+
+  -- Temporarily make modifiable to set lines
   vim.api.nvim_set_option_value("modifiable", true, { buf = buf_id })
   vim.api.nvim_buf_set_lines(buf_id, 0, -1, false, lines)
-  vim.api.nvim_set_option_value("modifiable", false, { buf = buf_id })
+
+  -- Restore original modifiable state
+  vim.api.nvim_set_option_value("modifiable", was_modifiable, { buf = buf_id })
 end
 
 return M

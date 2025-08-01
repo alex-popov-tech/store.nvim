@@ -123,6 +123,10 @@ function M.new(config)
       },
       repos = {},
       filtered_repos = {},
+      installable_count = 0, -- Total installable plugins from database meta
+      current_installable_count = 0, -- Current filtered installable plugins count
+      total_installed_count = 0, -- Total installed plugins from lock file (static)
+      installed_items = {}, -- Lookup table of installed plugin names for O(1) checks
       current_focus = "list", -- Track current focused component: "list" or "preview"
       current_repository = nil, -- Track currently selected repository
       is_refreshing = false, -- Track refresh state to prevent concurrent refreshes
@@ -427,6 +431,7 @@ function StoreModal:open()
     self:_resize_windows_for_focus("list")
   end)
 
+  -- Concurrently fetch plugins data and installed plugins
   database.fetch_plugins(function(data, err)
     if err then
       -- Log the error and show user-friendly message
@@ -448,6 +453,8 @@ function StoreModal:open()
     -- Store repositories in modal state
     self.state.repos = data.items or {}
     self.state.filtered_repos = data.items or {}
+    self.state.installable_count = data.meta.installable_count or 0
+    self.state.current_installable_count = data.meta.installable_count or 0
 
     -- Update list component configuration using public API
     self.list:update_config({
@@ -469,10 +476,44 @@ function StoreModal:open()
       state = "ready",
       filtered_count = data.meta.total_count,
       total_count = data.meta.total_count,
+      installable_count = self.state.current_installable_count,
+      installed_count = 0, -- Will be updated when installed plugins data loads
     })
     self.list:render({
       state = "ready",
       items = data.items or {},
+    })
+  end)
+
+  -- Concurrently fetch installed plugins
+  database.get_installed_plugins(function(installed_data, installed_err)
+    if installed_err then
+      logger.error("Failed to fetch installed plugins: " .. installed_err)
+      -- Don't fail the entire modal, just continue without installed info
+      return
+    end
+
+    logger.debug("Installed plugins loaded successfully: " .. vim.tbl_count(installed_data) .. " plugins")
+
+    -- Store installed plugins data in modal state
+    self.state.installed_items = installed_data or {}
+
+    -- Calculate total installed count from ALL installed plugins (static)
+    local total_installed_count = 0
+    for _ in pairs(self.state.installed_items) do
+      total_installed_count = total_installed_count + 1
+    end
+    self.state.total_installed_count = total_installed_count
+
+    -- Update heading with counts
+    self.heading:render({
+      installable_count = self.state.current_installable_count,
+      installed_count = self.state.total_installed_count,
+    })
+
+    -- Update list component with installed plugins data
+    self.list:render({
+      installed_items = installed_data,
     })
   end)
 end
@@ -495,11 +536,7 @@ function StoreModal:apply_sort(sort_type)
 
   -- Update header with new sort status
   local heading_error = self.heading:render({
-    filter_query = self.state.filter_query,
     sort_type = sort_type,
-    state = "ready",
-    filtered_count = #self.state.filtered_repos,
-    total_count = #self.state.repos,
   })
   if heading_error then
     logger.error("Failed to render heading after sort: " .. heading_error)
@@ -701,6 +738,8 @@ end
 function StoreModal:_apply_filter()
   if self.state.filter_query == "" then
     self.state.filtered_repos = self.state.repos
+    -- Reset to total installable count when filter is cleared
+    self.state.current_installable_count = self.state.installable_count
   else
     local filter_predicate, error_msg = utils.create_advanced_filter(self.state.filter_query)
     if error_msg then
@@ -710,12 +749,18 @@ function StoreModal:_apply_filter()
       return
     end
 
+    local filtered_installable_count = 0
     self.state.filtered_repos = {}
     for _, repo in ipairs(self.state.repos) do
       if filter_predicate(repo) then
         table.insert(self.state.filtered_repos, repo)
+        -- if filtered repo is installable, count it for heading
+        if repo.install then
+          filtered_installable_count = filtered_installable_count + 1
+        end
       end
     end
+    self.state.current_installable_count = filtered_installable_count
   end
 
   -- After filtering, re-apply current sort
@@ -733,6 +778,8 @@ function StoreModal:_render_after_refresh()
     state = "ready",
     filtered_count = #self.state.filtered_repos,
     total_count = #self.state.repos,
+    installable_count = self.state.current_installable_count,
+    installed_count = self.state.total_installed_count,
   })
 
   -- Re-render list with filtered results

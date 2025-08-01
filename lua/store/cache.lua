@@ -1,4 +1,4 @@
-local Path = require("plenary.path")
+local Path = require("store.plenary.path")
 local logger = require("store.logger")
 
 ---@class CacheItem

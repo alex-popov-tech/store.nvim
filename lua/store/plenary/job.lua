@@ -1,8 +1,8 @@
 local vim = vim
 local uv = vim.loop
-local compat = require("plenary.compat")
+local compat = require("store.plenary.compat")
 
-local F = require("plenary.functional")
+local F = require("store.plenary.functional")
 
 ---@class Job
 ---@field command string Command to run

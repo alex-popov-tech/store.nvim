@@ -3,10 +3,10 @@
 --- Goal: Create objects that are extremely similar to Python's `Path` Objects.
 --- Reference: https://docs.python.org/3/library/pathlib.html
 
-local bit = require("plenary.bit")
+local bit = require("store.plenary.bit")
 local uv = vim.loop
 
-local F = require("plenary.functional")
+local F = require("store.plenary.functional")
 
 local S_IF = {
   -- S_IFDIR  = 0o040000  # directory
@@ -599,7 +599,7 @@ function Path:copy(opts)
       parents = F.if_nil(opts.parents, false, opts.parents),
       exists_ok = F.if_nil(opts.exists_ok, true, opts.exists_ok),
     })
-    local scan = require("plenary.scandir")
+    -- scandir not needed for store.nvim functionality
     local data = scan.scan_dir(self.filename, {
       respect_gitignore = F.if_nil(opts.respect_gitignore, false, opts.respect_gitignore),
       hidden = F.if_nil(opts.hidden, true, opts.hidden),
@@ -652,7 +652,7 @@ function Path:rm(opts)
 
   local recursive = F.if_nil(opts.recursive, false, opts.recursive)
   if recursive then
-    local scan = require("plenary.scandir")
+    -- scandir not needed for store.nvim functionality
     local abs = self:absolute()
 
     -- first unlink all files

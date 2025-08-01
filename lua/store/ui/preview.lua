@@ -215,12 +215,16 @@ function Preview:open()
     return nil
   end
 
+  local store_config = require("store.config")
+  local plugin_config = store_config.get()
+
   local window_config = {
     width = self.config.width,
     height = self.config.height,
     row = self.config.row,
     col = self.config.col,
     focusable = true,
+    zindex = plugin_config.zindex.base,
   }
 
   local window_opts = {
@@ -323,6 +327,9 @@ function Preview:resize(layout_config)
     return "Cannot resize preview window: window not open or invalid"
   end
 
+  local store_config = require("store.config")
+  local plugin_config = store_config.get()
+
   local success, err = pcall(vim.api.nvim_win_set_config, self.state.win_id, {
     relative = "editor",
     width = layout_config.width,
@@ -331,7 +338,7 @@ function Preview:resize(layout_config)
     col = layout_config.col,
     style = "minimal",
     border = "rounded",
-    zindex = 50,
+    zindex = plugin_config.zindex.base,
   })
 
   if not success then

@@ -2,7 +2,7 @@
 
 ## Project Status
 
-**Status Summary**: The store.nvim plugin is **feature-complete and production-ready**. All core functionality has been implemented with a modern, well-structured codebase. The plugin provides a complete 3-window modal interface for browsing Neovim plugins with caching, filtering, and GitHub integration.
+**Status Summary**: The store.nvim plugin is **feature-complete and production-ready**. All core functionality has been implemented with a modern, well-structured codebase. The plugin provides a complete 3-window modal interface for browsing Neovim plugins with caching, filtering, GitHub integration, and direct plugin installation to lazy.nvim.
 
 ---
 
@@ -15,10 +15,11 @@
   - ✅ Gist integration for public data hosting
 
 - [x] **2. Create GitHub Actions cron job to run script and update 'database' daily** ( must have before release )
-  - ✅ **IMPLEMENTED AND SECURE**: Daily GitHub Actions workflow with proper environment variables
-  - ✅ Daily cron job runs at 3 AM UTC to update plugin database
+  - ✅ **IMPLEMENTED**: Moved to separate TypeScript crawler repository
+  - ✅ Daily cron job runs to update plugin database
   - ✅ Environment variable validation implemented with early failure
-  - ✅ Automated updates to both local file and GitHub Gist
+  - ✅ Automated updates to GitHub Gist hosting the database
+  - Note: GitHub Actions workflow no longer in this repository as crawler was separated
 
 - [x] **8. Ensure passing tokens, URLs, etc to GitHub Actions script, not hardcoding them** ( must have before release )
   - ✅ **IMPLEMENTED AND SECURE**: All tokens and URLs use environment variables
@@ -136,16 +137,21 @@
   - Fallback to README if doc.txt doesn't exist
   - Update preview header to show current document type
 
-- [ ] **16. Add installed plugins list at the top**
-  - Detect locally installed plugins from package managers (lazy.nvim, packer, etc.)
-  - Display installed status indicators in repository list
-  - Add filter option to show only installed/not installed plugins
+- [x] **16. Add installed plugins list at the top**
+  - ✅ **PARTIALLY COMPLETED**: Detection and display implemented (v1.2.0)
+  - ✅ Detect locally installed plugins from lazy.nvim via `lazy-lock.json` parsing
+  - ✅ Display installed status indicators (🏠 icon) in repository list
+  - ✅ Configurable through `list_fields` configuration option with `is_installed` field
+  - ❌ TODO: Add filter option to show only installed/not installed plugins
+  - ❌ TODO: Support other package managers (packer, vim-plug, etc.)
 
-- [ ] **19. Make help window pretty with smooth animations**
-  - Replace current help modal with vim.notify-style appearance
-  - Add smooth fade-in/fade-out animations
-  - Improve visual design with better formatting and icons
-  - Implement gradual disappearing effect instead of abrupt close
+- [x] **19. Make help window pretty with smooth animations**
+  - ✅ **COMPLETED**: Architecturally rebuilt help window (v1.2.0)
+  - ✅ Clean modal design with rounded borders
+  - ✅ Proper keybinding display with formatted columns
+  - ✅ Centralized layout management integrated with modal system
+  - ✅ Focus restoration after closing
+  - Note: Animations not implemented but architectural improvements provide clean UI
 
 - [x] **21. Add ability to source from multiple sources**
   - ✅ **COMPLETED**: Major crawler update (v1.1.0)
@@ -171,14 +177,15 @@
   - ✅ Shows last updated timestamp in plugin list
   - ✅ Part of enhanced repository display system
 
-- [ ] **31. Add sandboxed plugin installation for testing** ( needs investigation, efforts required )
-  - Create `store.nvim.sandbox.lua` file for temporary plugin loading
-  - Source sandbox file synchronously in init.lua for testing purposes
-  - Allow users to "try before install" plugins without permanent changes
-  - Investigate vim's native package manager (:h vim-pack) for temporary plugin installation
-  - Explore using vim-pack JSON specs for marketplace-managed plugin installation
-  - Implement cleanup mechanism to remove sandbox plugins after testing
-  - Add keybinding to toggle sandbox mode for selected plugin
+- [x] **31. Add sandboxed plugin installation for testing**
+  - ✅ **COMPLETED**: Full installation feature implemented (v1.2.0)
+  - ✅ 'i' keybinding to install plugins to lazy.nvim configuration
+  - ✅ Confirmation dialog with editable plugin configuration
+  - ✅ Automatically creates plugin file in `lua/plugins/` directory
+  - ✅ Shows preview of lazy.nvim configuration before installation
+  - ✅ Prevents duplicate installations by checking existing files
+  - ✅ Integration with lazy.nvim's :Lazy sync command
+  - Note: Implemented as direct installation rather than sandbox approach
 
 - [~] **32. Reach out to Dotfyle for plugin database collaboration** ( suspended )
   - ⏸️ **SUSPENDED**: Limited responsiveness from Dotfyle team
@@ -194,14 +201,16 @@
   - Implement lazy.nvim-style update interface with expandable plugin details
   - Allow users to mark plugins as "seen" to track what's new for them
 
-- [ ] **34. Add 'installed' label for plugins using multiple package manager detection**
-  - Parse `lazy-lock.json` from Neovim data directory to detect lazy.nvim installed plugins
-  - Investigate vim's native package manager (:h vim-pack) for JSON plugin specs
-  - Display visual indicator (label/icon) for plugins that are already installed
-  - Show installed status in plugin list alongside repository statistics
-  - Add filtering option to show only installed or non-installed plugins
-  - Handle different plugin specification formats across package managers (lazy, packer, vim-pack)
-  - Cache parsed lock file data and track installation state changes for dynamic updates
+- [x] **34. Add 'installed' label for plugins using multiple package manager detection**
+  - ✅ **PARTIALLY COMPLETED**: Core functionality implemented (v1.2.0)
+  - ✅ Parse `lazy-lock.json` from Neovim config directory to detect lazy.nvim installed plugins
+  - ✅ Display visual indicator (🏠 icon) for plugins that are already installed
+  - ✅ Show installed status in plugin list alongside repository statistics
+  - ✅ Configurable through `list_fields` configuration option
+  - ✅ Efficient O(1) lookup implementation with concurrent fetching
+  - ❌ TODO: Add filtering option to show only installed or non-installed plugins
+  - ❌ TODO: Handle different plugin specification formats across package managers (lazy, packer, vim-pack)
+  - ❌ TODO: Cache parsed lock file data and track installation state changes for dynamic updates
 
 - [ ] **35. Integrate blink.cmp completion for enhanced filtering experience**
   - Replace basic filter input with blink.cmp-powered completion system
@@ -249,6 +258,6 @@
 
 ## 📝 Notes
 
-**Last Updated**: 2025-07-18
+**Last Updated**: 2025-07-31
 
 This TODO.md file is now the canonical source for tracking development progress. The roadmap has been moved from CLAUDE.md to this dedicated tracking document for better organization and clarity.

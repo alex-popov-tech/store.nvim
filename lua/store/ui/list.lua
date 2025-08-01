@@ -73,6 +73,7 @@ local M = {}
 ---@field is_open boolean Window open status
 ---@field state string current component state - "loading", "ready", "error"
 ---@field items Repository[] List of repositories
+---@field installed_items table<string, boolean> Lookup table of installed plugin names for O(1) checks
 ---@field cursor_autocmd_id number|nil Cursor movement autocmd ID
 ---@field cursor_debounce_timer number|nil Cursor movement debounce timer
 ---@field full_name_to_rendering_line_cache {[string]: string} Cache of full name to rendering line
@@ -80,6 +81,7 @@ local M = {}
 ---@class ListStateUpdate
 ---@field state string
 ---@field items Repository[]|nil?
+---@field installed_items table<string, boolean>|nil?
 
 ---@class ListConfig
 ---@field width number Window width
@@ -117,6 +119,7 @@ local DEFAULT_CONFIG = {
     pretty_open_issues_count = 8,
     pretty_pushed_at = 27,
   },
+  list_fields = {},
 }
 
 local DEFAULT_STATE = {
@@ -128,6 +131,7 @@ local DEFAULT_STATE = {
   -- UI state
   state = "loading",
   items = {},
+  installed_items = {},
 
   -- Operational state
   cursor_autocmd_id = nil,
@@ -307,12 +311,16 @@ function List:open()
     return nil
   end
 
+  local store_config = require("store.config")
+  local plugin_config = store_config.get()
+
   local window_config = {
     width = self.config.width,
     height = self.config.height,
     row = self.config.row,
     col = self.config.col,
     focusable = true,
+    zindex = plugin_config.zindex.base,
   }
 
   -- Window options optimized for list display
@@ -458,6 +466,9 @@ function List:resize(layout_config)
     return "Cannot resize list window: window not open or invalid"
   end
 
+  local store_config = require("store.config")
+  local plugin_config = store_config.get()
+
   local success, err = pcall(vim.api.nvim_win_set_config, self.state.win_id, {
     relative = "editor",
     width = layout_config.width,
@@ -466,7 +477,7 @@ function List:resize(layout_config)
     col = layout_config.col,
     style = "minimal",
     border = "rounded",
-    zindex = 50,
+    zindex = plugin_config.zindex.base,
   })
 
   if not success then
@@ -531,6 +542,69 @@ function List:_render_error()
   utils.set_lines(self.state.buf_id, content_lines)
 end
 
+---Pad or truncate string based on display width (handles emojis correctly)
+---@private
+---@param text string String to process
+---@param expected_length number Expected display width
+---@return string Fixed-width string
+function List:_pad_or_truncate_display(text, expected_length)
+  if type(text) ~= "string" then
+    text = tostring(text or "")
+  end
+
+  if expected_length <= 0 then
+    return ""
+  end
+
+  local display_width = vim.fn.strdisplaywidth(text)
+
+  if display_width == expected_length then
+    return text
+  end
+
+  if display_width < expected_length then
+    local spaces_needed = expected_length - display_width
+    return text .. string.rep(" ", spaces_needed)
+  end
+
+  -- display_width > expected_length, truncate
+  -- This is simplified - proper truncation with display width is complex
+  if expected_length == 1 then
+    return "…"
+  end
+
+  local truncated = vim.fn.strcharpart(text, 0, expected_length - 1)
+  return truncated .. "…"
+end
+
+---Format a list of string-length pairs using display width
+---@private
+---@param pairs table[] List of {string, number} pairs where string is content and number is column width
+---@return string Formatted line with space-separated columns of fixed widths
+function List:_format_table_line_display(pairs)
+  if type(pairs) ~= "table" then
+    return ""
+  end
+
+  if #pairs == 0 then
+    return ""
+  end
+
+  local columns = {}
+
+  for i, pair in ipairs(pairs) do
+    if type(pair) ~= "table" or #pair ~= 2 then
+      table.insert(columns, "")
+    else
+      local str, length = pair[1], pair[2]
+      local formatted = self:_pad_or_truncate_display(str, length)
+      table.insert(columns, formatted)
+    end
+  end
+
+  return table.concat(columns, " ")
+end
+
 ---Calculate formatted display line for a repository
 ---@private
 ---@param repo Repository Repository to format
@@ -538,6 +612,13 @@ end
 function List:_calculate_display_line(repo)
   -- Field renderer mapping
   local field_renderers = {
+    is_installed = function(r)
+      local is_installed = self.state.installed_items[r.name] == true
+      return is_installed and "🏠" or " " -- House or space
+    end,
+    is_installable = function(r)
+      return r.install ~= nil and "📦" or " " -- Package or space
+    end,
     full_name = function(r)
       return r.full_name
     end,
@@ -558,6 +639,8 @@ function List:_calculate_display_line(repo)
 
   -- Max length mapping (with emoji prefix adjustments)
   local max_length_map = {
+    is_installed = 2, -- Emoji width (2 characters in most terminals)
+    is_installable = 2, -- Emoji width (2 characters in most terminals)
     full_name = self.config.max_lengths.full_name,
     stars = self.config.max_lengths.pretty_stargazers_count + 2, -- +2 for ⭐
     forks = self.config.max_lengths.pretty_forks_count + 2, -- +2 for 🍴
@@ -579,8 +662,16 @@ function List:_calculate_display_line(repo)
         end
         append_content = " " .. table.concat(tag_parts, ", ")
       end
+    elseif field == "is_installed" or field == "is_installable" then
+      -- Handle is_installed and is_installable fields
+      local renderer = field_renderers[field]
+      if renderer then
+        local content = renderer(repo)
+        local max_length = max_length_map[field] or 1 -- Fallback to 1 character
+        table.insert(columns, { content, max_length })
+      end
     else
-      -- Handle table fields
+      -- Handle other table fields
       local renderer = field_renderers[field]
       if renderer then
         local content = renderer(repo)
@@ -593,8 +684,7 @@ function List:_calculate_display_line(repo)
     end
   end
 
-  local main_content = format_table_line(columns)
-  return main_content .. append_content
+  return self:_format_table_line_display(columns) .. append_content
 end
 
 ---Clear the display line cache

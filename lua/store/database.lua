@@ -1,4 +1,4 @@
-local curl = require("plenary.curl")
+local curl = require("store.plenary.curl")
 local cache = require("store.cache")
 local config = require("store.config")
 local utils = require("store.utils")
@@ -14,8 +14,15 @@ function M.fetch_plugins(callback, force_refresh)
   if not force_refresh then
     local cached_data, is_valid = cache.list_plugins()
     if is_valid then
-      callback(cached_data, nil)
-      return
+      -- Check if version field exists in meta
+      if cached_data.meta and cached_data.meta.version then
+        callback(cached_data, nil)
+        return
+      else
+        -- Version field missing, force refresh
+        logger.debug("Cache missing version field, forcing refresh")
+        -- Continue to network fetch below
+      end
     end
   end
 
@@ -165,12 +172,14 @@ function M.get_readme(repo_path, callback, force_refresh)
       if not success then
         logger.error("Failed to fetch README from GitHub API: HTTP " .. response.status .. " " .. response.body)
         callback(nil, response.body or "Failed to fetch README from GitHub API")
+        return
       end
 
       local json_success, json_data = pcall(vim.json.decode, response.body)
       if not json_success or not json_data then
         logger.error("Failed to parse GitHub API response")
         callback(nil, "Failed to parse GitHub API response")
+        return
       end
 
       local clean_content = json_data.content:gsub("\n", "")
@@ -185,9 +194,50 @@ function M.get_readme(repo_path, callback, force_refresh)
         cache.save_readme(plugin_url, lines)
       end)
 
-      callback(lines)
+      callback(lines, nil)
     end,
   })
+end
+
+---Get list of installed plugins from lazy-lock.json
+---@param callback fun(data: table<string, boolean>|nil, error: string|nil) Callback function with plugin lookup table or error
+function M.get_installed_plugins(callback)
+  local config_path = vim.fn.stdpath("config")
+  local lazy_lock_path = config_path .. "/lazy-lock.json"
+
+  -- Check if file exists
+  if vim.fn.filereadable(lazy_lock_path) == 0 then
+    logger.debug("lazy-lock.json not found at: " .. lazy_lock_path)
+    callback({}, nil) -- Return empty table, not an error
+    return
+  end
+
+  -- Read and parse the file
+  local success, content = pcall(vim.fn.readfile, lazy_lock_path)
+  if not success then
+    logger.error("Failed to read lazy-lock.json: " .. tostring(content))
+    callback(nil, "Failed to read lazy-lock.json: " .. tostring(content))
+    return
+  end
+
+  local json_content = table.concat(content, "\n")
+  local json_success, data = pcall(vim.json.decode, json_content)
+  if not json_success then
+    logger.error("Failed to parse lazy-lock.json: " .. tostring(data))
+    callback(nil, "Failed to parse lazy-lock.json: " .. tostring(data))
+    return
+  end
+
+  -- Convert to lookup table (just set all keys to true)
+  local plugin_lookup = {}
+  local count = 0
+  for plugin_name, _ in pairs(data) do
+    plugin_lookup[plugin_name] = true
+    count = count + 1
+  end
+
+  logger.debug("Found " .. count .. " installed plugins")
+  callback(plugin_lookup, nil)
 end
 
 return M

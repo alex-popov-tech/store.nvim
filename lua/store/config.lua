@@ -6,26 +6,28 @@ local utils = require("store.utils")
 ---@field width? number Window width (0.0-1.0 for percentage, >1 for absolute)
 ---@field height? number Window height (0.0-1.0 for percentage, >1 for absolute)
 ---@field proportions? {list: number, preview: number} Layout proportions for panes (0.0-1.0)
----@field keybindings? {help: string[], close: string[], filter: string[], refresh: string[], open: string[], switch_focus: string[], sort: string[]} Key binding configuration
+---@field keybindings? {help: string[], close: string[], filter: string[], refresh: string[], open: string[], switch_focus: string[], sort: string[], install: string[]} Key binding configuration
 ---@field preview_debounce? number Debounce delay for preview updates (ms)
 ---@field cache_duration? number Cache duration in seconds
 ---@field logging? string Logging level: "off"|"error"|"warn"|"log"|"debug" (default: "off")
 ---@field github_token? string GitHub personal access token for API authentication
 ---@field full_name_limit? number Maximum character length for repository full_name display
----@field list_fields? string[] List of fields to display in order: "full_name"|"stars"|"forks"|"issues"|"tags"
+---@field list_fields? string[] List of fields to display in order: "is_installed"|"is_installable"|"full_name"|"stars"|"forks"|"issues"|"tags"|"pushed_at"
+---@field zindex? {base: number, backdrop: number, popup: number} Z-index configuration for modal layers
 
 ---@class UserConfigWithDefaults
 ---@field width number Window width (0.0-1.0 for percentage, >1 for absolute)
 ---@field height number Window height (0.0-1.0 for percentage, >1 for absolute)
 ---@field proportions {list: number, preview: number} Layout proportions for panes (0.0-1.0)
----@field keybindings {help: string[], close: string[], filter: string[], refresh: string[], open: string[], switch_focus: string[], sort: string[]} Key binding configuration
+---@field keybindings {help: string[], close: string[], filter: string[], refresh: string[], open: string[], switch_focus: string[], sort: string[], install: string[]} Key binding configuration
 ---@field preview_debounce number Debounce delay for preview updates (ms)
 ---@field cache_duration number Cache duration in seconds
 ---@field data_source_url string URL for fetching plugin data
 ---@field logging string Logging level: "off"|"error"|"warn"|"log"|"debug" (default: "off")
 ---@field full_name_limit number Maximum character length for repository full_name display
----@field list_fields string[] List of fields to display in order: "full_name"|"stars"|"forks"|"issues"|"tags"
+---@field list_fields string[] List of fields to display in order: "is_installed"|"is_installable"|"full_name"|"stars"|"forks"|"issues"|"tags"|"pushed_at"
 ---@field github_token? string GitHub personal access token for API authentication
+---@field zindex {base: number, backdrop: number, popup: number} Z-index configuration for modal layers
 
 ---@class ComponentLayout
 ---@field width number Window width
@@ -43,6 +45,9 @@ local utils = require("store.utils")
 ---@field header ComponentLayout Header window layout
 ---@field list ComponentLayout List window layout
 ---@field preview ComponentLayout Preview window layout
+---@field filter ComponentLayout Filter popup layout
+---@field sort ComponentLayout Sort popup layout
+---@field help ComponentLayout Help popup layout
 
 ---@class PluginConfig : UserConfig
 ---@field layout StoreModalLayout Window layout dimensions
@@ -51,6 +56,73 @@ local M = {}
 
 ---@type PluginConfig|nil
 local plugin_config = nil
+
+-- Calculate all layout dimensions and return complete layout
+---@param config table Configuration with width, height, proportions, and keybindings
+---@return StoreModalLayout|nil layout Complete layout if calculation succeeded, nil if failed
+---@return string|nil error Error message if calculation failed
+local function calculate_complete_layout(config)
+  local sort = require("store.sort")
+  local keymaps = require("store.keymaps")
+
+  -- Calculate filter dimensions: half width of main modal, single line
+  local screen_width = vim.o.columns
+  local main_modal_width = math.floor(screen_width * config.width)
+  local filter_width = math.floor(main_modal_width / 2)
+  local filter_height = 1
+
+  -- Calculate sort dimensions from sort module
+  local sort_types = sort.get_sort_types()
+  local sort_lines_count = #sort_types
+  local sort_longest_line = 0
+  local checkmark_space = 2 -- "✓ "
+
+  for _, sort_type in ipairs(sort_types) do
+    local label = sort.sorts[sort_type].label
+    local line_length = checkmark_space + vim.fn.strchars(label)
+    sort_longest_line = math.max(sort_longest_line, line_length)
+  end
+
+  -- Calculate help dimensions from keybindings and labels
+  local help_lines_count = 2 -- header + separator
+  local max_keybinding_length = 3 -- minimum for "Key" header
+  local max_label_length = 6 -- minimum for "Action" header
+
+  for action, keys in pairs(config.keybindings) do
+    help_lines_count = help_lines_count + #keys
+    for _, key in ipairs(keys) do
+      max_keybinding_length = math.max(max_keybinding_length, vim.fn.strchars(key))
+    end
+    local label = keymaps.get_label(action)
+    if not label then
+      return nil, "No label found for action '" .. action .. "'"
+    end
+    max_label_length = math.max(max_label_length, vim.fn.strchars(label))
+  end
+
+  local column_spacing = 2
+  local help_longest_line = max_keybinding_length + column_spacing + max_label_length
+
+  -- Calculate complete layout
+  return utils.calculate_layout({
+    width = config.width,
+    height = config.height,
+    proportions = config.proportions,
+  }, {
+    filter = {
+      width = filter_width,
+      height = filter_height,
+    },
+    sort = {
+      lines_count = sort_lines_count,
+      longest_line = sort_longest_line,
+    },
+    help = {
+      lines_count = help_lines_count,
+      longest_line = help_longest_line,
+    },
+  })
+end
 
 local DEFAULT_USER_CONFIG = {
   -- Main window dimensions (percentages or absolute)
@@ -72,12 +144,13 @@ local DEFAULT_USER_CONFIG = {
     open = { "<cr>", "o" },
     switch_focus = { "<tab>", "<s-tab>" },
     sort = { "s" },
+    install = { "i" },
   },
 
   -- Behavior
   preview_debounce = 100, -- ms delay for preview updates
   cache_duration = 24 * 60 * 60, -- 24 hours
-  data_source_url = "https://gist.githubusercontent.com/alex-popov-tech/dfb6adf1ee0506461d7dc029a28f851d/raw/store.nvim_db_1.1.0.json", -- URL for plugin data
+  data_source_url = "https://gist.githubusercontent.com/alex-popov-tech/dfb6adf1ee0506461d7dc029a28f851d/raw/db_minified.json", -- URL for plugin data
 
   -- Logging
   logging = "off",
@@ -87,7 +160,14 @@ local DEFAULT_USER_CONFIG = {
 
   -- List display settings
   full_name_limit = 35, -- Maximum character length for repository full_name display
-  list_fields = { "full_name", "pushed_at", "stars", "forks", "issues", "tags" }, -- Fields to display in order
+  list_fields = { "is_installed", "is_installable", "stars", "full_name", "pushed_at", "tags" }, -- Fields to display in order
+
+  -- Z-index configuration for modal layers
+  zindex = {
+    base = 10, -- Base modal components (heading, list, preview)
+    backdrop = 15, -- Reserved for backdrop/dimming layer
+    popup = 20, -- Popup modals (help, sort, filter)
+  },
 }
 
 ---Validate merged configuration against expected structure
@@ -230,6 +310,46 @@ local function validate_config(config)
     end
   end
 
+  if config.zindex ~= nil then
+    local err = validators.should_be_table(config.zindex, "zindex must be a table")
+    if err then
+      return err
+    end
+
+    -- Validate each zindex value
+    if config.zindex.base ~= nil then
+      local base_err = validators.should_be_positive_number(config.zindex.base, "zindex.base must be a positive number")
+      if base_err then
+        return base_err
+      end
+    end
+
+    if config.zindex.backdrop ~= nil then
+      local backdrop_err =
+        validators.should_be_positive_number(config.zindex.backdrop, "zindex.backdrop must be a positive number")
+      if backdrop_err then
+        return backdrop_err
+      end
+    end
+
+    if config.zindex.popup ~= nil then
+      local popup_err =
+        validators.should_be_positive_number(config.zindex.popup, "zindex.popup must be a positive number")
+      if popup_err then
+        return popup_err
+      end
+    end
+
+    -- Validate proper layering order
+    if config.zindex.base and config.zindex.backdrop and config.zindex.base >= config.zindex.backdrop then
+      return "zindex.base must be less than zindex.backdrop"
+    end
+
+    if config.zindex.backdrop and config.zindex.popup and config.zindex.backdrop >= config.zindex.popup then
+      return "zindex.backdrop must be less than zindex.popup"
+    end
+  end
+
   return nil
 end
 
@@ -246,12 +366,8 @@ function M.setup(user_config)
     return "Store.nvim configuration error: " .. error_msg
   end
 
-  -- Calculate layout with final config
-  local computed_layout, layout_error = utils.calculate_layout({
-    width = merged_config.width,
-    height = merged_config.height,
-    proportions = merged_config.proportions,
-  })
+  -- Calculate complete layout with final config
+  local computed_layout, layout_error = calculate_complete_layout(merged_config)
   if layout_error then
     return "Store.nvim layout calculation error: " .. layout_error
   end
@@ -279,12 +395,13 @@ end
 function M.update_layout(proportions)
   local config = M.get()
 
-  -- Calculate layout with the provided proportions
-  local new_layout, layout_error = utils.calculate_layout({
-    width = config.width,
-    height = config.height,
+  -- Create config with new proportions for layout calculation
+  local config_with_new_proportions = vim.tbl_deep_extend("force", config, {
     proportions = proportions,
   })
+
+  -- Calculate complete layout with new proportions
+  local new_layout, layout_error = calculate_complete_layout(config_with_new_proportions)
 
   -- If calculation succeeded, update global config with new proportions
   if new_layout then
