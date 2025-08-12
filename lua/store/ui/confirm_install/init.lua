@@ -135,9 +135,9 @@ local function calculate_dimensions(content)
   local config = require("store.config").get()
   local layout = config.layout
 
-  -- Calculate 80% of store modal dimensions
-  local max_width = math.floor(layout.total_width * 0.8)
-  local max_height = math.floor(layout.total_height * 0.8)
+  -- Calculate 50% of store modal dimensions
+  local max_width = math.floor(layout.total_width * 0.5)
+  local max_height = math.floor(layout.total_height * 0.5)
 
   -- Get actual content dimensions
   local content_height = #content -- Exact content height, no extra padding
@@ -149,8 +149,10 @@ local function calculate_dimensions(content)
   content_width = content_width + 4 -- Add padding
 
   -- Use smaller of content size or max size
-  local width = math.min(content_width, max_width)
-  local height = math.min(content_height, max_height)
+  -- local width = math.min(content_width, max_width)
+  -- local height = math.min(content_height, max_height)
+  local width = max_width
+  local height = max_height
 
   -- Center the popup
   local row = math.floor((vim.o.lines - height) / 2)
@@ -176,10 +178,10 @@ function M.new(config)
 
   -- Create modifiable markdown buffer for editing
   local buf_id = utils.create_scratch_buffer({
-    buftype = "nofile",
+    filetype = "markdown",
+    buftype = "",
     modifiable = true,
     readonly = false,
-    filetype = "markdown",
   })
 
   if not buf_id then
@@ -239,7 +241,7 @@ function M:open()
     opts = {
       conceallevel = 3,
       concealcursor = "nvc",
-      wrap = true,
+      wrap = false,
       cursorline = false,
     },
     focus = true,

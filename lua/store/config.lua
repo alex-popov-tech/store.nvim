@@ -133,8 +133,8 @@ local DEFAULT_USER_CONFIG = {
 
   -- Window layout proportions (must sum to 1.0)
   proportions = {
-    list = 0.7, -- 30% for repository list
-    preview = 0.3, -- 70% for preview pane
+    list = 0.5,
+    preview = 0.5,
   },
 
   -- Keybindings configuration

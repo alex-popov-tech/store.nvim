@@ -34,8 +34,8 @@ require("store").setup({
 
   -- Window layout proportions (must sum to 1.0)
   proportions = {
-    list = 0.3, -- 30% for repository list
-    preview = 0.7, -- 70% for preview pane
+    list = 0.5,
+    preview = 0.5,
   },
 
   -- Keybindings configuration
@@ -97,37 +97,20 @@ Opens the store modal interface.
 
 ## Filtering
 
-- Basic:
-telescope
-nvim-lua/plenary
-```
+  ```
+  -- Basic search (searches author/name)
+  telescope
+  nvim-lua/plenary
 
-### Field-Specific Search
-```lua
--- Search by specific fields
-author:nvim-telescope          -- Find plugins by specific author
-name:telescope                 -- Search only in repository names
-description:fuzzy finder       -- Search in descriptions
-tags:lsp,completion           -- Search by tags (comma-separated)
-```
+  -- Field-specific searches
+  author:nvim-telescope
+  name:telescope
+  description:fuzzy finder
+  tags:lsp,completion
 
-### Combined Queries
-```lua
--- Multiple conditions (all must match)
-telescope;author:nvim-telescope;tags:fuzzy,finder
+  -- Combined queries (all must match)
+  telescope;author:nvim-telescope;tags:fuzzy,finder
 
--- Complex multi-field query
-author:folke;tags:ui,colorscheme;description:modern
-```
-
-## Sorting
-
-Use the `s` key to cycle through available sorting options:
-
-- **Default**: Original order from the plugin database
-- **Recently Updated**: Sort by last repository update (newest first)
-- **Most Stars**: Sort by GitHub star count (highest first)
-
-The current sorting mode is displayed in the header for reference.
-
-For more help: https://github.com/alex-popov-tech/store.nvim/issues
+  -- Complex multi-field query
+  author:folke;tags:ui,colorscheme;
+  ```
