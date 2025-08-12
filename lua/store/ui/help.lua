@@ -1,4 +1,4 @@
-local logger = require("store.logger")
+local logger = require("store.logger").createLogger({ context = "help" })
 
 local M = {}
 
@@ -8,10 +8,10 @@ local M = {}
 local function _generate_help_items(keybindings)
   local help_items = {}
   local keymaps = require("store.keymaps")
-  
+
   for action, keys in pairs(keybindings) do
     local label = keymaps.get_label(action)
-    
+
     if keys and label then
       -- Add a line for each key that triggers this action
       for _, key in ipairs(keys) do
@@ -22,7 +22,7 @@ local function _generate_help_items(keybindings)
       end
     end
   end
-  
+
   return help_items
 end
 
@@ -182,8 +182,6 @@ function M.close()
     return
   end
 
-  logger.debug("Closing Help window")
-
   -- Store references before cleanup to prevent race conditions
   local win_id = instance.win_id
   local buf_id = instance.buf_id
@@ -213,17 +211,17 @@ function M.open(config)
 
   -- Validate configuration
   if not config or not config.on_exit then
-    logger.error("Help requires on_exit callback")
+    logger.warn("Help requires on_exit callback")
     return
   end
-  
+
   if not config.layout then
-    logger.error("Help requires layout information")
+    logger.warn("Help requires layout information")
     return
   end
-  
+
   if not config.keybindings then
-    logger.error("Help requires keybindings information")
+    logger.warn("Help requires keybindings information")
     return
   end
 
@@ -247,12 +245,10 @@ function M.open(config)
     end
 
     instance.is_open = true
-
-    logger.debug("Help window opened successfully")
   end)
 
   if not success then
-    logger.error("Help window creation failed: " .. tostring(err))
+    logger.warn("Help window creation failed: " .. tostring(err))
 
     -- Cleanup partial state
     if instance then

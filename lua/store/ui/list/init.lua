@@ -1,110 +1,9 @@
-local validators = require("store.validators")
-local logger = require("store.logger")
+local store_config = require("store.config")
+local validations = require("store.ui.list.validations")
 local utils = require("store.utils")
-
----Pad or truncate a string to a fixed length with ellipsis
----@param text string String to process
----@param expected_length number Maximum length of the result
----@return string Fixed-length string, either padded with spaces or truncated with ellipsis
-local function pad_or_truncate(text, expected_length)
-  if type(text) ~= "string" then
-    logger.error("pad_or_truncate: expected string, got " .. type(text))
-    text = tostring(text or "")
-  end
-
-  if expected_length <= 0 then
-    return ""
-  end
-
-  local char_count = vim.fn.strchars(text)
-
-  if char_count == expected_length then
-    return text
-  end
-
-  if char_count < expected_length then
-    local spaces_needed = expected_length - char_count
-    return text .. string.rep(" ", spaces_needed)
-  end
-
-  -- char_count > max_length, truncate and add ellipsis
-  if expected_length == 1 then
-    return "…"
-  end
-
-  local truncated = vim.fn.strcharpart(text, 0, expected_length - 1)
-  return truncated .. "…"
-end
-
----Format a list of string-length pairs into a table-like line with consistent column widths
----@param pairs table[] List of {string, number} pairs where string is content and number is column width
----@return string Formatted line with space-separated columns of fixed widths
-local function format_table_line(pairs)
-  if type(pairs) ~= "table" then
-    logger.error("format_table_line: expected table, got " .. type(pairs))
-    return ""
-  end
-
-  if #pairs == 0 then
-    return ""
-  end
-
-  local columns = {}
-
-  for i, pair in ipairs(pairs) do
-    if type(pair) ~= "table" or #pair ~= 2 then
-      logger.error("format_table_line: pair " .. i .. " is not a valid {string, number} pair")
-      table.insert(columns, "")
-    else
-      local str, length = pair[1], pair[2]
-      local formatted = pad_or_truncate(str, length)
-      table.insert(columns, formatted)
-    end
-  end
-
-  return table.concat(columns, " ")
-end
+local logger = require("store.logger").createLogger({ context = "list" })
 
 local M = {}
-
----@class ListState
----@field win_id number|nil Window ID
----@field buf_id number|nil Buffer ID
----@field is_open boolean Window open status
----@field state string current component state - "loading", "ready", "error"
----@field items Repository[] List of repositories
----@field installed_items table<string, boolean> Lookup table of installed plugin names for O(1) checks
----@field cursor_autocmd_id number|nil Cursor movement autocmd ID
----@field cursor_debounce_timer number|nil Cursor movement debounce timer
----@field full_name_to_rendering_line_cache {[string]: string} Cache of full name to rendering line
-
----@class ListStateUpdate
----@field state string
----@field items Repository[]|nil?
----@field installed_items table<string, boolean>|nil?
-
----@class ListConfig
----@field width number Window width
----@field height number Window height
----@field row number Window row position
----@field col number Window column position
----@field on_repo fun(repository: Repository) Callback when cursor moves over repository
----@field keymaps_applier fun(buf_id: number) Function to apply keymaps to buffer
----@field cursor_debounce_delay number Debounce delay for cursor movement in milliseconds
----@field max_lengths { full_name: number, pretty_stargazers_count: number, pretty_forks_count: number, pretty_open_issues_count: number, pretty_pushed_at: number } Maximum field lengths for table formatting
----@field list_fields string[] List of fields to display in order
-
----@class List
----@field config ListConfig Window configuration
----@field state ListState Component state
----@field open fun(self: List): string|nil
----@field close fun(self: List): string|nil
----@field render fun(self: List, state: ListStateUpdate): string|nil
----@field focus fun(self: List): string|nil
----@field resize fun(self: List, layout_config: {width: number, height: number, row: number, col: number}): string|nil
----@field get_window_id fun(self: List): number|nil
----@field is_valid fun(self: List): boolean
----@field update_config fun(self: List, config_updates: table): string|nil
 
 local DEFAULT_CONFIG = {
   on_repo = function()
@@ -133,143 +32,15 @@ local DEFAULT_STATE = {
   items = {},
   installed_items = {},
 
+  -- Selection state
+  current_repository = nil,
+
   -- Operational state
   cursor_autocmd_id = nil,
   cursor_debounce_timer = nil,
   -- Performance cache
   full_name_to_rendering_line_cache = {}, -- full_name => rendered_line map for O(1) access
 }
-
----Validate list window configuration
----@param config ListConfig List window configuration to validate
----@return string|nil error_message Error message if validation fails, nil if valid
-local function validate_config(config)
-  local err = validators.should_be_table(config, "list window config must be a table")
-  if err then
-    return err
-  end
-
-  local width_err = validators.should_be_number(config.width, "list.width must be a number")
-  if width_err then
-    return width_err
-  end
-
-  local height_err = validators.should_be_number(config.height, "list.height must be a number")
-  if height_err then
-    return height_err
-  end
-
-  local row_err = validators.should_be_number(config.row, "list.row must be a number")
-  if row_err then
-    return row_err
-  end
-
-  local col_err = validators.should_be_number(config.col, "list.col must be a number")
-  if col_err then
-    return col_err
-  end
-
-  local callback_err = validators.should_be_function(config.on_repo, "list.on_repo must be a function")
-  if callback_err then
-    return callback_err
-  end
-
-  local keymaps_err = validators.should_be_function(config.keymaps_applier, "list.keymaps_applier must be a function")
-  if keymaps_err then
-    return keymaps_err
-  end
-
-  local debounce_err =
-    validators.should_be_number(config.cursor_debounce_delay, "list.cursor_debounce_delay must be a number")
-  if debounce_err then
-    return debounce_err
-  end
-
-  local list_fields_err = validators.should_be_table(config.list_fields, "list.list_fields must be an array")
-  if list_fields_err then
-    return list_fields_err
-  end
-
-  return nil
-end
-
----Validate list state for consistency and safety
----@param state ListStateUpdate List state to validate
----@return string|nil error_message Error message if validation fails, nil if valid
-local function validate_state(state)
-  local err = validators.should_be_table(state, "list state must be a table")
-  if err then
-    return err
-  end
-
-  -- Validate state field
-  if state.state ~= nil then
-    local state_err = validators.should_be_string(state.state, "list.state must be a string")
-    if state_err then
-      return state_err
-    end
-
-    local valid_states = { loading = true, ready = true, error = true }
-    if not valid_states[state.state] then
-      return "list.state must be one of 'loading', 'ready', 'error', got: " .. state.state
-    end
-  end
-
-  -- Validate items field
-  if state.items ~= nil then
-    if type(state.items) ~= "table" then
-      return "list.items must be nil or an array of repositories, got: " .. type(state.items)
-    end
-
-    for i, item in ipairs(state.items) do
-      if type(item) ~= "table" then
-        return "list.items[" .. i .. "] must be a repository table, got: " .. type(item)
-      end
-    end
-  end
-
-  -- Validate window state fields if present
-  if state.win_id ~= nil then
-    local win_err = validators.should_be_number(state.win_id, "list.win_id must be nil or a number")
-    if win_err then
-      return win_err
-    end
-  end
-
-  if state.buf_id ~= nil then
-    local buf_err = validators.should_be_number(state.buf_id, "list.buf_id must be nil or a number")
-    if buf_err then
-      return buf_err
-    end
-  end
-
-  if state.is_open ~= nil then
-    if type(state.is_open) ~= "boolean" then
-      return "list.is_open must be nil or a boolean, got: " .. type(state.is_open)
-    end
-  end
-
-  -- Validate operational state fields if present
-
-  -- Validate cursor state fields if present
-  if state.cursor_autocmd_id ~= nil then
-    local autocmd_err =
-      validators.should_be_number(state.cursor_autocmd_id, "list.cursor_autocmd_id must be nil or a number")
-    if autocmd_err then
-      return autocmd_err
-    end
-  end
-
-  if state.cursor_debounce_timer ~= nil then
-    local timer_err =
-      validators.should_be_number(state.cursor_debounce_timer, "list.cursor_debounce_timer must be nil or a number")
-    if timer_err then
-      return timer_err
-    end
-  end
-
-  return nil
-end
 
 local List = {}
 List.__index = List
@@ -283,7 +54,7 @@ function M.new(list_config)
   local config = vim.tbl_deep_extend("force", DEFAULT_CONFIG, list_config or {})
 
   -- Validate merged configuration
-  local error_msg = validate_config(config)
+  local error_msg = validations.validate_config(config)
   if error_msg then
     return nil, "List window configuration validation failed: " .. error_msg
   end
@@ -361,12 +132,12 @@ end
 ---@return nil
 function List:_setup_cursor_callbacks()
   if not self.config.on_repo then
-    logger.error("List window: Cannot setup cursor callbacks - on_repo callback not provided")
+    logger.warn("List window: Cannot setup cursor callbacks - on_repo callback not provided")
     return
   end
 
   if not self.state.win_id then
-    logger.error("List window: Cannot setup cursor callbacks - win_id is nil")
+    logger.warn("List window: Cannot setup cursor callbacks - win_id is nil")
     return
   end
 
@@ -388,16 +159,29 @@ function List:_setup_cursor_callbacks()
       self.state.cursor_debounce_timer = vim.fn.timer_start(self.config.cursor_debounce_delay, function()
         self.state.cursor_debounce_timer = nil
         if not self.state.win_id or not vim.api.nvim_win_is_valid(self.state.win_id) then
+          logger.debug("Cursor event ignored: invalid window")
           return
         end
 
         local cursor = vim.api.nvim_win_get_cursor(self.state.win_id)
         local line_num = cursor[1]
+        logger.debug("Cursor moved to line " .. line_num)
 
-        -- Get repository data for current line
         local repo_data = self.state.items[line_num]
         if repo_data then
-          self.config.on_repo(repo_data)
+          -- Only trigger callback if repository selection has changed
+          local needs_callback = not self.state.current_repository
+            or self.state.current_repository.full_name ~= repo_data.full_name
+
+          if needs_callback then
+            self.state.current_repository = repo_data
+            logger.debug("Selected repository: " .. repo_data.full_name .. " triggering on_repo callback")
+            self.config.on_repo(repo_data)
+          else
+            logger.debug("Repository selection unchanged: " .. repo_data.full_name)
+          end
+        else
+          logger.debug("No repository data for line " .. line_num)
         end
       end)
     end,
@@ -419,16 +203,19 @@ function List:render(state)
   end
 
   -- Create new state locally by merging current state with update
-  local new_state = vim.tbl_deep_extend("force", self.state, state)
+  local new_state = vim.tbl_extend("force", self.state, state)
 
   -- Validate the merged state before applying it
-  local validation_error = validate_state(state)
+  local validation_error = validations.validate_state(state)
   if validation_error then
     return "List window: Invalid state update - " .. validation_error
   end
 
   -- Only assign to self.state if validation passes
   self.state = new_state
+
+  local item_count = (state.items and #state.items) or 0
+  logger.debug("Rendering list with " .. item_count .. " items, state: " .. (state.state or "unknown"))
 
   -- Only schedule the final rendering dispatch using safe self.state
   vim.schedule(function()
@@ -458,37 +245,65 @@ function List:focus()
   return nil
 end
 
----Resize the list window to new layout dimensions
+---Resize the list window and preserve state
 ---@param layout_config {width: number, height: number, row: number, col: number} New layout configuration
 ---@return string|nil error Error message if resize failed, nil if successful
 function List:resize(layout_config)
+  -- Validate layout_config parameters
+  if not layout_config or type(layout_config) ~= "table" then
+    return "Invalid layout_config: must be a table"
+  end
+
+  local required_fields = { "width", "height", "row", "col" }
+  for _, field in ipairs(required_fields) do
+    if not layout_config[field] or type(layout_config[field]) ~= "number" then
+      return "Invalid layout_config: " .. field .. " must be a number"
+    end
+    if layout_config[field] < 0 then
+      return "Invalid layout_config: " .. field .. " must be non-negative"
+    end
+  end
+
   if not self.state.is_open or not self.state.win_id or not vim.api.nvim_win_is_valid(self.state.win_id) then
     return "Cannot resize list window: window not open or invalid"
   end
 
-  local store_config = require("store.config")
-  local plugin_config = store_config.get()
+  -- Save current cursor position and scroll state
+  local cursor_pos = vim.api.nvim_win_get_cursor(self.state.win_id)
+  local topline = vim.fn.line("w0", self.state.win_id)
 
-  local success, err = pcall(vim.api.nvim_win_set_config, self.state.win_id, {
+  local win_config = {
     relative = "editor",
-    width = layout_config.width,
-    height = layout_config.height,
     row = layout_config.row,
     col = layout_config.col,
-    style = "minimal",
-    border = "rounded",
-    zindex = plugin_config.zindex.base,
-  })
+    width = layout_config.width,
+    height = layout_config.height,
+  }
 
+  local success, err = pcall(vim.api.nvim_win_set_config, self.state.win_id, win_config)
   if not success then
     return "Failed to resize list window: " .. (err or "unknown error")
   end
 
-  -- Update internal config
+  -- Update config for future operations
   self.config.width = layout_config.width
   self.config.height = layout_config.height
   self.config.row = layout_config.row
   self.config.col = layout_config.col
+
+  -- Re-render content if we have items to ensure proper formatting with new width
+  if self.state.items and #self.state.items > 0 then
+    vim.schedule(function()
+      if vim.api.nvim_win_is_valid(self.state.win_id) then
+        -- Restore scroll position first
+        pcall(vim.api.nvim_win_call, self.state.win_id, function()
+          vim.cmd("normal! " .. topline .. "Gzt")
+        end)
+        -- Then restore cursor position
+        pcall(vim.api.nvim_win_set_cursor, self.state.win_id, cursor_pos)
+      end
+    end)
+  end
 
   return nil
 end
@@ -619,8 +434,17 @@ function List:_calculate_display_line(repo)
     is_installable = function(r)
       return r.install ~= nil and "📦" or " " -- Package or space
     end,
+    author = function(r)
+      return r.author
+    end,
+    name = function(r)
+      return r.name
+    end,
     full_name = function(r)
       return r.full_name
+    end,
+    description = function(r)
+      return r.description
     end,
     stars = function(r)
       return "⭐" .. r.pretty_stargazers_count
@@ -641,6 +465,8 @@ function List:_calculate_display_line(repo)
   local max_length_map = {
     is_installed = 2, -- Emoji width (2 characters in most terminals)
     is_installable = 2, -- Emoji width (2 characters in most terminals)
+    author = self.config.max_lengths.author,
+    name = self.config.max_lengths.name,
     full_name = self.config.max_lengths.full_name,
     stars = self.config.max_lengths.pretty_stargazers_count + 2, -- +2 for ⭐
     forks = self.config.max_lengths.pretty_forks_count + 2, -- +2 for 🍴
@@ -719,9 +545,17 @@ function List:_render_ready(state)
   if self.state.win_id and vim.api.nvim_win_is_valid(self.state.win_id) and #content_lines > 0 then
     vim.api.nvim_win_set_cursor(self.state.win_id, { 1, 0 })
 
-    -- Trigger initial callback if we have repository data for first line
+    -- Trigger initial callback only if repository selection has changed
     if self.config.on_repo and self.state.items[1] then
-      self.config.on_repo(self.state.items[1])
+      local first_repo = self.state.items[1]
+      local needs_callback = not self.state.current_repository
+        or self.state.current_repository.full_name ~= first_repo.full_name
+
+      if needs_callback then
+        self.state.current_repository = first_repo
+        logger.debug("Repository selection changed to: " .. first_repo.full_name)
+        self.config.on_repo(first_repo)
+      end
     end
   end
 end
@@ -729,7 +563,7 @@ end
 ---Get the window ID of the list component
 ---@return number|nil window_id Window ID if open, nil otherwise
 function List:get_window_id()
-  if self.state.is_open and self.state.win_id and vim.api.nvim_win_is_valid(self.state.win_id) then
+  if self.state.is_open then
     return self.state.win_id
   end
   return nil
@@ -741,6 +575,12 @@ function List:is_valid()
   return self.state.buf_id ~= nil
     and vim.api.nvim_buf_is_valid(self.state.buf_id)
     and (not self.state.is_open or (self.state.win_id and vim.api.nvim_win_is_valid(self.state.win_id)))
+end
+
+---Get the currently selected repository
+---@return Repository|nil repository Currently selected repository, nil if none selected
+function List:get_current_repository()
+  return self.state.current_repository
 end
 
 ---Update component configuration safely

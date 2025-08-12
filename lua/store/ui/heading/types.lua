@@ -1,0 +1,33 @@
+---@class HeadingConfig: ComponentLayout
+
+---@class HeadingState
+---@field win_id number|nil Window ID
+---@field buf_id number|nil Buffer ID
+---@field is_open boolean Window open status
+---@field state string current component state - "loading", "ready", "error"
+---@field filter_query string Current filter query
+---@field sort_type string Current sort type
+---@field filtered_count number Number of plugins after filtering
+---@field total_count number Total number of plugins
+---@field installable_count number Number of installable plugins in current view
+---@field installed_count number Number of installed plugins in current view
+
+---@class HeadingStateUpdate
+---@field state string?
+---@field filter_query string?
+---@field sort_type string?
+---@field filtered_count number?
+---@field total_count number?
+---@field installable_count number? Number of installable plugins in current view
+---@field installed_count number? Number of installed plugins in current view
+
+---@class Heading
+---@field config HeadingConfig Window configuration
+---@field state HeadingState Component state
+---@field open fun(self: Heading): string|nil
+---@field close fun(self: Heading): string|nil
+---@field render fun(self: Heading, data: HeadingStateUpdate): string|nil
+---@field focus fun(self: Heading): string|nil
+---@field resize fun(self: Heading, layout_config: {width: number, height: number, row: number, col: number}): string|nil
+---@field get_window_id fun(self: Heading): number|nil
+---@field is_valid fun(self: Heading): boolean

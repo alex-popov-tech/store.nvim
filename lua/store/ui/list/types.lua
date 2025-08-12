@@ -1,0 +1,40 @@
+---@class ListState
+---@field win_id number|nil Window ID
+---@field buf_id number|nil Buffer ID
+---@field is_open boolean Window open status
+---@field state string current component state - "loading", "ready", "error"
+---@field items Repository[] List of repositories
+---@field installed_items table<string, boolean> Lookup table of installed plugin names for O(1) checks
+---@field cursor_autocmd_id number|nil Cursor movement autocmd ID
+---@field cursor_debounce_timer number|nil Cursor movement debounce timer
+---@field current_repository Repository|nil Currently selected repository
+---@field full_name_to_rendering_line_cache {[string]: string} Cache of full name to rendering line
+
+---@class ListStateUpdate
+---@field state string
+---@field items Repository[]|nil?
+---@field installed_items table<string, boolean>|nil?
+
+---@class ListConfig
+---@field width number Window width
+---@field height number Window height
+---@field row number Window row position
+---@field col number Window column position
+---@field on_repo fun(repository: Repository) Callback when cursor moves over repository
+---@field keymaps_applier fun(buf_id: number) Function to apply keymaps to buffer
+---@field cursor_debounce_delay number Debounce delay for cursor movement in milliseconds
+---@field max_lengths { full_name: number, pretty_stargazers_count: number, pretty_forks_count: number, pretty_open_issues_count: number, pretty_pushed_at: number } Maximum field lengths for table formatting
+---@field list_fields string[] List of fields to display in order
+
+---@class List
+---@field config ListConfig Window configuration
+---@field state ListState Component state
+---@field open fun(self: List): string|nil
+---@field close fun(self: List): string|nil
+---@field render fun(self: List, state: ListStateUpdate): string|nil
+---@field focus fun(self: List): string|nil
+---@field resize fun(self: List, layout_config: {width: number, height: number, row: number, col: number}): string|nil
+---@field get_window_id fun(self: List): number|nil
+---@field is_valid fun(self: List): boolean
+---@field get_current_repository fun(self: List): Repository|nil
+---@field update_config fun(self: List, config_updates: table): string|nil

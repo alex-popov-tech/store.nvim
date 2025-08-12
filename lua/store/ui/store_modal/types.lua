@@ -1,0 +1,32 @@
+---@class StoreModalConfig : PluginConfig
+---@field on_close? fun(): void Callback when modal is closed
+
+---@class StoreModal
+---@field config StoreModalConfig Complete computed configuration
+---@field is_open boolean Modal open status
+---@field state table Modal state (filter_query, repos, etc.)
+---@field heading Heading Header component instance
+---@field list ListWindow List component instance
+---@field preview Preview Preview component instance
+---@field layout_manager LayoutManager Layout calculation manager
+---@field window_manager WindowManager Window lifecycle manager
+---
+---PUBLIC API:
+---@field open fun(): string|nil Open modal, returns error if failed
+---@field close fun(): string|nil Close modal, returns error if failed
+---@field focus fun(): nil Focus the list component
+---@field refresh fun(): nil Refresh plugin data
+---@field apply_sort fun(sort_type: string): nil Apply sorting
+---@field on_repo fun(repository: Repository): nil Handle repository selection
+---
+---PRIVATE API (internal use only):
+---@field _setup_focus_detection fun(): nil Setup focus and resize listeners
+---@field _cleanup_focus_detection fun(): nil Cleanup focus detection resources
+---@field _on_focus_change fun(): nil Handle focus change events
+---@field _determine_focused_component fun(current_win: number): string|nil Determine focused component
+---@field _resize_windows_for_focus fun(focused_component: string): nil Resize windows for focus
+---@field _handle_terminal_resize fun(): nil Handle terminal resize events
+---@field _dimensions_unchanged fun(width: number, height: number): boolean Check if dimensions changed
+---@field _setup_resize_listener fun(): nil Setup terminal resize listener
+---@field _apply_filter fun(): nil Apply current filter to repositories
+---@field _render_after_refresh fun(): nil Re-render components after refresh

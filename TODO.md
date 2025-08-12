@@ -165,7 +165,7 @@
   - ✅ Combined queries with `;` separator for multiple criteria
   - ✅ Complex multi-field queries fully functional
 
-- [ ] **29. Track 'new' plugins introduced recently**
+- [x] **29. Track 'new' plugins introduced recently** (won't do, too much plugins on early stages)
   - Implement system to identify recently added plugins
   - Add timestamp tracking for plugin discovery
   - Display "NEW" indicators for recently introduced plugins
@@ -193,7 +193,7 @@
   - 🔄 Awaiting response for plugin database collaboration
   - 💡 Alternative: Current crawler expansion to 3k+ repos may provide sufficient coverage
 
-- [ ] **33. Add 'newly posted' plugins view similar to lazy.nvim updates**
+- [x] **33. Add 'newly posted' plugins view similar to lazy.nvim updates** (won't do, too much plugins on early stages)
   - Create dedicated view/tab showing recently added plugins to the database
   - Display plugins discovered in the last week/month with timestamps
   - Show diff-style interface highlighting new additions since last check

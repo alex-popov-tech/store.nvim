@@ -1,33 +1,38 @@
 local validators = require("store.validators")
-local logger = require("store.logger")
 local utils = require("store.utils")
+local keymaps = require("store.keymaps")
+local sort = require("store.sort")
 
 ---@class UserConfig
 ---@field width? number Window width (0.0-1.0 for percentage, >1 for absolute)
 ---@field height? number Window height (0.0-1.0 for percentage, >1 for absolute)
 ---@field proportions? {list: number, preview: number} Layout proportions for panes (0.0-1.0)
----@field keybindings? {help: string[], close: string[], filter: string[], refresh: string[], open: string[], switch_focus: string[], sort: string[], install: string[]} Key binding configuration
+---@field keybindings? {help: string[], close: string[], filter: string[], reset: string[], open: string[], switch_focus: string[], sort: string[], install: string[]} Key binding configuration
 ---@field preview_debounce? number Debounce delay for preview updates (ms)
 ---@field cache_duration? number Cache duration in seconds
----@field logging? string Logging level: "off"|"error"|"warn"|"log"|"debug" (default: "off")
----@field github_token? string GitHub personal access token for API authentication
+---@field logging? string Logging level: "off"|"error"|"warn"|"info"|"debug" (default: "off")
 ---@field full_name_limit? number Maximum character length for repository full_name display
----@field list_fields? string[] List of fields to display in order: "is_installed"|"is_installable"|"full_name"|"stars"|"forks"|"issues"|"tags"|"pushed_at"
+---@field author_limit? number Maximum character length for repository author display
+---@field name_limit? number Maximum character length for repository name display
+---@field list_fields? string[] List of fields to display in order: "is_installed"|"is_installable"|"author"|"name"|"full_name"|"stars"|"forks"|"issues"|"tags"|"pushed_at"|"description"
 ---@field zindex? {base: number, backdrop: number, popup: number} Z-index configuration for modal layers
+---@field resize_debounce? number Debounce delay for resize operations (ms, 10-200 range)
 
 ---@class UserConfigWithDefaults
 ---@field width number Window width (0.0-1.0 for percentage, >1 for absolute)
 ---@field height number Window height (0.0-1.0 for percentage, >1 for absolute)
 ---@field proportions {list: number, preview: number} Layout proportions for panes (0.0-1.0)
----@field keybindings {help: string[], close: string[], filter: string[], refresh: string[], open: string[], switch_focus: string[], sort: string[], install: string[]} Key binding configuration
+---@field keybindings {help: string[], close: string[], filter: string[], reset: string[], open: string[], switch_focus: string[], sort: string[], install: string[]} Key binding configuration
 ---@field preview_debounce number Debounce delay for preview updates (ms)
 ---@field cache_duration number Cache duration in seconds
 ---@field data_source_url string URL for fetching plugin data
----@field logging string Logging level: "off"|"error"|"warn"|"log"|"debug" (default: "off")
+---@field logging string Logging level: "off"|"error"|"warn"|"info"|"debug" (default: "off")
 ---@field full_name_limit number Maximum character length for repository full_name display
----@field list_fields string[] List of fields to display in order: "is_installed"|"is_installable"|"full_name"|"stars"|"forks"|"issues"|"tags"|"pushed_at"
----@field github_token? string GitHub personal access token for API authentication
+---@field author_limit number Maximum character length for repository author display
+---@field name_limit number Maximum character length for repository name display
+---@field list_fields string[] List of fields to display in order: "is_installed"|"is_installable"|"author"|"name"|"full_name"|"stars"|"forks"|"issues"|"tags"|"pushed_at"|"description"
 ---@field zindex {base: number, backdrop: number, popup: number} Z-index configuration for modal layers
+---@field resize_debounce number Debounce delay for resize operations (ms, 10-200 range)
 
 ---@class ComponentLayout
 ---@field width number Window width
@@ -49,7 +54,7 @@ local utils = require("store.utils")
 ---@field sort ComponentLayout Sort popup layout
 ---@field help ComponentLayout Help popup layout
 
----@class PluginConfig : UserConfig
+---@class PluginConfig : UserConfigWithDefaults
 ---@field layout StoreModalLayout Window layout dimensions
 
 local M = {}
@@ -62,9 +67,6 @@ local plugin_config = nil
 ---@return StoreModalLayout|nil layout Complete layout if calculation succeeded, nil if failed
 ---@return string|nil error Error message if calculation failed
 local function calculate_complete_layout(config)
-  local sort = require("store.sort")
-  local keymaps = require("store.keymaps")
-
   -- Calculate filter dimensions: half width of main modal, single line
   local screen_width = vim.o.columns
   local main_modal_width = math.floor(screen_width * config.width)
@@ -125,14 +127,14 @@ local function calculate_complete_layout(config)
 end
 
 local DEFAULT_USER_CONFIG = {
-  -- Main window dimensions (percentages or absolute)
+  -- Main window dimensions in perc
   width = 0.8, -- 80% of screen width
   height = 0.8, -- 80% of screen height
 
   -- Window layout proportions (must sum to 1.0)
   proportions = {
-    list = 0.3, -- 30% for repository list
-    preview = 0.7, -- 70% for preview pane
+    list = 0.7, -- 30% for repository list
+    preview = 0.3, -- 70% for preview pane
   },
 
   -- Keybindings configuration
@@ -140,7 +142,7 @@ local DEFAULT_USER_CONFIG = {
     help = { "?" },
     close = { "q", "<esc>", "<c-c>" },
     filter = { "f" },
-    refresh = { "r" },
+    reset = { "r" },
     open = { "<cr>", "o" },
     switch_focus = { "<tab>", "<s-tab>" },
     sort = { "s" },
@@ -148,18 +150,17 @@ local DEFAULT_USER_CONFIG = {
   },
 
   -- Behavior
-  preview_debounce = 100, -- ms delay for preview updates
+  preview_debounce = 50, -- ms delay for preview updates
   cache_duration = 24 * 60 * 60, -- 24 hours
   data_source_url = "https://gist.githubusercontent.com/alex-popov-tech/dfb6adf1ee0506461d7dc029a28f851d/raw/db_minified.json", -- URL for plugin data
 
   -- Logging
   logging = "off",
 
-  -- GitHub API authentication
-  github_token = nil, -- GitHub personal access token for API authentication
-
   -- List display settings
   full_name_limit = 35, -- Maximum character length for repository full_name display
+  author_limit = 30, -- Maximum character length for repository author display
+  name_limit = 40, -- Maximum character length for repository name display
   list_fields = { "is_installed", "is_installable", "stars", "full_name", "pushed_at", "tags" }, -- Fields to display in order
 
   -- Z-index configuration for modal layers
@@ -168,6 +169,9 @@ local DEFAULT_USER_CONFIG = {
     backdrop = 15, -- Reserved for backdrop/dimming layer
     popup = 20, -- Popup modals (help, sort, filter)
   },
+
+  -- Resize behavior
+  resize_debounce = 30, -- ms delay for resize debouncing (10-200ms range)
 }
 
 ---Validate merged configuration against expected structure
@@ -224,6 +228,30 @@ local function validate_config(config)
     end
   end
 
+  if config.preview_debounce ~= nil then
+    local err =
+      validators.should_be_positive_number(config.preview_debounce, "preview_debounce must be a positive number")
+    if err then
+      return err
+    end
+  end
+
+  if config.cache_duration ~= nil then
+    local err = validators.should_be_positive_number(config.cache_duration, "cache_duration must be a positive number")
+    if err then
+      return err
+    end
+
+    -- Reasonable bounds: minimum 5 minutes, maximum 30 days
+    if config.cache_duration < 300 then
+      return "cache_duration must be at least 300 seconds (5 minutes)"
+    end
+
+    if config.cache_duration > 2592000 then
+      return "cache_duration must be at most 2592000 seconds (30 days)"
+    end
+  end
+
   if config.logging ~= nil then
     local err = validators.should_be_string(config.logging, "logging must be a string")
     if err then
@@ -231,7 +259,7 @@ local function validate_config(config)
     end
 
     -- Validate logging level value
-    local valid_levels = { "off", "error", "warn", "log", "debug" }
+    local valid_levels = { "off", "error", "warn", "info", "debug" }
     local is_valid_level = false
     for _, level in ipairs(valid_levels) do
       if config.logging == level then
@@ -241,7 +269,7 @@ local function validate_config(config)
     end
 
     if not is_valid_level then
-      return "logging must be one of: off, error, warn, log, debug"
+      return "logging must be one of: off, error, warn, info, debug"
     end
   end
 
@@ -257,16 +285,23 @@ local function validate_config(config)
     end
   end
 
-  if config.github_token ~= nil then
-    local err = validators.should_be_string(config.github_token, "github_token must be a string")
+  if config.full_name_limit ~= nil then
+    local err =
+      validators.should_be_positive_number(config.full_name_limit, "full_name_limit must be a positive number")
     if err then
       return err
     end
   end
 
-  if config.full_name_limit ~= nil then
-    local err =
-      validators.should_be_positive_number(config.full_name_limit, "full_name_limit must be a positive number")
+  if config.author_limit ~= nil then
+    local err = validators.should_be_positive_number(config.author_limit, "author_limit must be a positive number")
+    if err then
+      return err
+    end
+  end
+
+  if config.name_limit ~= nil then
+    local err = validators.should_be_positive_number(config.name_limit, "name_limit must be a positive number")
     if err then
       return err
     end
@@ -350,6 +385,23 @@ local function validate_config(config)
     end
   end
 
+  if config.resize_debounce ~= nil then
+    local err =
+      validators.should_be_positive_number(config.resize_debounce, "resize_debounce must be a positive number")
+    if err then
+      return err
+    end
+
+    -- Validate reasonable bounds (20-50ms recommended)
+    if config.resize_debounce < 10 then
+      return "resize_debounce must be at least 10ms"
+    end
+
+    if config.resize_debounce > 200 then
+      return "resize_debounce must be at most 200ms"
+    end
+  end
+
   return nil
 end
 
@@ -357,22 +409,18 @@ end
 ---@param user_config? UserConfig User configuration to merge with defaults
 ---@return string|nil error Error message if setup failed, nil if successful
 function M.setup(user_config)
-  -- Merge user config with defaults
   local merged_config = vim.tbl_deep_extend("force", DEFAULT_USER_CONFIG, user_config or {})
 
-  -- Validate the merged configuration
   local error_msg = validate_config(merged_config)
   if error_msg then
     return "Store.nvim configuration error: " .. error_msg
   end
 
-  -- Calculate complete layout with final config
   local computed_layout, layout_error = calculate_complete_layout(merged_config)
   if layout_error then
     return "Store.nvim layout calculation error: " .. layout_error
   end
 
-  -- Build the full plugin config
   plugin_config = vim.tbl_deep_extend("force", merged_config, {
     layout = computed_layout,
   })
@@ -403,15 +451,13 @@ function M.update_layout(proportions)
   -- Calculate complete layout with new proportions
   local new_layout, layout_error = calculate_complete_layout(config_with_new_proportions)
 
-  -- If calculation succeeded, update global config with new proportions
-  if new_layout then
-    plugin_config.proportions = proportions
-    plugin_config.layout = new_layout
-    return new_layout, nil
-  else
-    logger.error("Layout calculation failed: " .. layout_error)
+  if layout_error ~= nil then
     return nil, layout_error
   end
+
+  plugin_config.proportions = proportions
+  plugin_config.layout = new_layout
+  return new_layout, nil
 end
 
 return M

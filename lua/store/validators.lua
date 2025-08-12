@@ -178,4 +178,21 @@ function M.should_be_valid_keybindings(value, custom_error_message)
   return nil
 end
 
+---Validate that a value is a valid buffer ID
+---@param value any The value to validate
+---@param custom_error_message? string Custom error message to use
+---@return string|nil error_message Error message if validation fails, nil if valid
+function M.should_be_valid_buffer(value, custom_error_message)
+  local err = M.should_be_number(value)
+  if err then
+    return custom_error_message or ("buffer ID " .. err)
+  end
+
+  if not vim.api.nvim_buf_is_valid(value) then
+    return custom_error_message or ("buffer ID " .. value .. " is not valid")
+  end
+
+  return nil
+end
+
 return M

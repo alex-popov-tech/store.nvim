@@ -1,21 +1,8 @@
-local logger = require("store.logger")
+local logger = require("store.logger").createLogger({ context = "install" })
 local utils = require("store.utils")
-local validators = require("store.validators")
+local validations = require("store.ui.confirm_install.validations")
 
 local M = {}
-
----@class ConfirmInstallConfig
----@field repository Repository The repository to install
----@field on_confirm fun(config: string) Callback with edited configuration
----@field on_cancel fun() Callback when cancelled
-
----@class ConfirmInstall
----@field config ConfirmInstallConfig Configuration
----@field win_id number|nil Window ID
----@field buf_id number|nil Buffer ID
----@field dimensions {width: number, height: number, row: number, col: number} Cached dimensions
----@field open fun(self: ConfirmInstall): string|nil
----@field close fun(self: ConfirmInstall): string|nil
 
 ---Extract configuration from markdown buffer
 ---@param buf_id number Buffer ID
@@ -44,33 +31,6 @@ local function extract_config_from_buffer(buf_id)
   end
 
   return table.concat(config_lines, "\n")
-end
-
----Validate configuration
----@param config ConfirmInstallConfig|nil
----@return string|nil Error message or nil if valid
-local function validate_config(config)
-  if not config then
-    return "confirm_install.config must be a table, got: nil"
-  end
-
-  if not config.repository then
-    return "confirm_install.config.repository is required"
-  end
-
-  local on_confirm_error =
-    validators.should_be_function(config.on_confirm, "confirm_install.config.on_confirm must be a function")
-  if on_confirm_error then
-    return on_confirm_error
-  end
-
-  local on_cancel_error =
-    validators.should_be_function(config.on_cancel, "confirm_install.config.on_cancel must be a function")
-  if on_cancel_error then
-    return on_cancel_error
-  end
-
-  return nil
 end
 
 ---Create buffer content
@@ -139,11 +99,9 @@ local function setup_keymaps(buf_id, instance)
   -- Normal mode keymaps only
   local keymaps = {
     ["<cr>"] = function()
-      logger.debug("Confirm pressed")
-      -- Extract edited configuration from buffer
       local edited_config = extract_config_from_buffer(buf_id)
       if not edited_config then
-        logger.error("Failed to extract configuration from buffer")
+        logger.warn("Failed to extract configuration from buffer")
         instance:close()
         return
       end
@@ -152,12 +110,10 @@ local function setup_keymaps(buf_id, instance)
       instance.config.on_confirm(edited_config)
     end,
     ["<esc>"] = function()
-      logger.debug("Cancel pressed")
       instance:close()
       instance.config.on_cancel()
     end,
     ["q"] = function()
-      logger.debug("Cancel pressed")
       instance:close()
       instance.config.on_cancel()
     end,
@@ -213,7 +169,7 @@ end
 ---@return ConfirmInstall|nil, string|nil Component instance or nil, error message
 function M.new(config)
   -- Validate configuration
-  local validation_error = validate_config(config)
+  local validation_error = validations.validate_config(config)
   if validation_error then
     return nil, validation_error
   end
@@ -281,12 +237,12 @@ function M:open()
       zindex = config.zindex.popup,
     },
     opts = {
-      conceallevel = 3, -- Required for markview to hide markdown syntax
-      concealcursor = "nvc", -- Hide concealed text in normal, visual, command modes
-      wrap = true, -- Enable text wrapping for markdown content
+      conceallevel = 3,
+      concealcursor = "nvc",
+      wrap = true,
       cursorline = false,
-      focus = true,
     },
+    focus = true,
   })
 
   if error_message then
@@ -302,7 +258,6 @@ function M:open()
     markview.actions.enable(self.buf_id)
   end
 
-  logger.debug("Confirm install popup opened")
   return nil
 end
 
@@ -326,7 +281,6 @@ function M:close()
   self.win_id = nil
   self.buf_id = nil
 
-  logger.debug("Confirm install popup closed")
   return nil
 end
 

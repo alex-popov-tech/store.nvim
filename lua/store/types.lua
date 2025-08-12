@@ -12,6 +12,7 @@
 ---@field pretty_open_issues_count string Formatted number of open issues
 ---@field pushed_at number Last push time in Unix timestamp
 ---@field pretty_pushed_at string Formatted last push time
+---@field readme string Readme file path
 ---@field install {initial: string, lazyConfig: string}|nil Installation information (nil if not installable)
 
 ---@class Meta

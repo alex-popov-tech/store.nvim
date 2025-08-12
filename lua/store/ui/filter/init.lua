@@ -1,37 +1,8 @@
-local validators = require("store.validators")
+local validations = require("store.ui.filter.validations")
 local utils = require("store.utils")
+local logger = require("store.logger").createLogger({ context = "filter" })
 
 local M = {}
-
----@class FilterConfig
----@field width number Window width
----@field height number Window height in lines
----@field row number Window row position
----@field col number Window column position
----@field current_query string Current filter query to pre-fill
----@field on_value fun(query: string) Callback when filter is applied
----@field on_exit fun() Callback when filter is cancelled (handles focus restoration)
-
----@class FilterState
----@field win_id number|nil Window ID
----@field buf_id number|nil Buffer ID
----@field is_open boolean Window open status
----@field state string Current component state - "loading", "ready", "error"
-
----@class FilterStateUpdate
----@field state string?
-
----@class Filter
----@field config FilterConfig Window configuration
----@field state FilterState Component state
----@field open fun(self: Filter): string|nil
----@field close fun(self: Filter): string|nil
----@field render fun(self: Filter, data: FilterStateUpdate|nil): string|nil
----@field focus fun(self: Filter): string|nil
----@field get_window_id fun(self: Filter): number|nil
----@field is_valid fun(self: Filter): boolean
----@field apply_filter fun(self: Filter): string|nil
----@field cancel_filter fun(self: Filter): string|nil
 
 local DEFAULT_FILTER_CONFIG = {
   width = 60,
@@ -45,74 +16,6 @@ local DEFAULT_STATE = {
   state = "loading",
 }
 
----Validate filter configuration
----@param config FilterConfig|nil
----@return string|nil Error message or nil if valid
-local function validate_config(config)
-  if not config then
-    return "filter.config must be a table, got: nil"
-  end
-
-  local width_error =
-    validators.should_be_positive_number(config.width, "filter.config.width must be a positive number")
-  if width_error then
-    return width_error
-  end
-
-  local height_error =
-    validators.should_be_positive_number(config.height, "filter.config.height must be a positive number")
-  if height_error then
-    return height_error
-  end
-
-  local row_error = validators.should_be_number(config.row, "filter.config.row must be a number")
-  if row_error then
-    return row_error
-  end
-
-  local col_error = validators.should_be_number(config.col, "filter.config.col must be a number")
-  if col_error then
-    return col_error
-  end
-
-  local current_query_error =
-    validators.should_be_string(config.current_query, "filter.config.current_query must be a string")
-  if current_query_error then
-    return current_query_error
-  end
-
-  if not config.on_value or type(config.on_value) ~= "function" then
-    return "filter.config.on_value must be a function, got: " .. type(config.on_value)
-  end
-
-  if not config.on_exit or type(config.on_exit) ~= "function" then
-    return "filter.config.on_exit must be a function, got: " .. type(config.on_exit)
-  end
-
-  return nil
-end
-
----Validate filter state
----@param state FilterState
----@return string|nil Error message or nil if valid
-local function validate_state(state)
-  if not state then
-    return "filter.state must be a table, got: nil"
-  end
-
-  local is_open_error = validators.should_be_boolean(state.is_open, "filter.state.is_open must be a boolean")
-  if is_open_error then
-    return is_open_error
-  end
-
-  local state_error = validators.should_be_string(state.state, "filter.state.state must be a string")
-  if state_error then
-    return state_error
-  end
-
-  return nil
-end
-
 -- Filter class
 local Filter = {}
 Filter.__index = Filter
@@ -125,7 +28,7 @@ function M.new(filter_config)
   local merged_config = vim.tbl_deep_extend("force", DEFAULT_FILTER_CONFIG, filter_config or {})
 
   -- Validate configuration
-  local config_error = validate_config(merged_config)
+  local config_error = validations.validate_config(merged_config)
   if config_error then
     return nil, config_error
   end
@@ -134,7 +37,7 @@ function M.new(filter_config)
   local merged_state = vim.tbl_deep_extend("force", DEFAULT_STATE, {})
 
   -- Validate state
-  local state_error = validate_state(merged_state)
+  local state_error = validations.validate_state(merged_state)
   if state_error then
     return nil, state_error
   end
@@ -152,6 +55,10 @@ function M.new(filter_config)
     return nil, "Filter buffer creation failed: " .. buf_error
   end
   instance.state.buf_id = buf_id
+  local keymaps_error = instance:_setup_keymaps(buf_id)
+  if keymaps_error then
+    return nil, "Cannot setup keymaps: " .. keymaps_error
+  end
 
   return instance, nil
 end
@@ -172,38 +79,34 @@ end
 ---Apply current filter and close component
 ---@return string|nil Error message or nil on success
 function Filter:apply_filter()
+  vim.cmd("stopinsert")
   local query = self:_get_current_query()
   local on_value = self.config.on_value
-
-  local close_error = self:close()
-  if close_error then
-    return close_error
-  end
 
   -- Call callback after cleanup
   if on_value then
     on_value(query)
   end
 
-  return nil
+  self.config.on_exit()
+
+  local close_error = self:close()
+  return close_error
 end
 
 ---Cancel filter and close component
 ---@return string|nil Error message or nil on success
 function Filter:cancel_filter()
+  vim.cmd("stopinsert")
   local on_exit = self.config.on_exit
-
-  local close_error = self:close()
-  if close_error then
-    return close_error
-  end
 
   -- Call callback after cleanup
   if on_exit then
     on_exit()
   end
 
-  return nil
+  local close_error = self:close()
+  return close_error
 end
 
 ---Create and configure buffer
@@ -211,6 +114,7 @@ end
 function Filter:_create_buffer()
   local buf_id = utils.create_scratch_buffer({
     buftype = "nofile",
+    filetype = "store_filter",
     modifiable = true,
     readonly = false,
   })
@@ -252,7 +156,12 @@ function Filter:_setup_keymaps(buf_id)
   -- Insert mode keymaps
   local insert_keymaps = {
     ["<cr>"] = function()
+      vim.cmd("stopinsert")
       self:apply_filter()
+    end,
+    ["<c-c>"] = function()
+      vim.cmd("stopinsert")
+      self:cancel_filter()
     end,
   }
 
@@ -288,12 +197,6 @@ function Filter:open()
     return "Filter buffer is invalid"
   end
 
-  -- Setup keymaps
-  local keymap_error = self:_setup_keymaps(self.state.buf_id)
-  if keymap_error then
-    return "Filter keymap setup failed: " .. keymap_error
-  end
-
   -- Create window
   local store_config = require("store.config")
   local plugin_config = store_config.get()
@@ -310,9 +213,7 @@ function Filter:open()
       border = "rounded",
       zindex = plugin_config.zindex.popup,
     },
-    opts = {
-      focus = true,
-    },
+    focus = true,
   })
 
   if win_error then
@@ -379,7 +280,7 @@ function Filter:render(state_update)
     local updated_state = vim.tbl_deep_extend("force", self.state, state_update)
 
     -- Validate merged state
-    local state_error = validate_state(updated_state)
+    local state_error = validations.validate_state(updated_state)
     if state_error then
       return "Invalid state update: " .. state_error
     end
@@ -388,11 +289,8 @@ function Filter:render(state_update)
     self.state = updated_state
   end
 
-  -- Update buffer content
-  local content_error = self:_update_buffer_content()
-  if content_error then
-    return "Failed to render content: " .. content_error
-  end
+  -- Update buffer content method not defined in original, skip for now
+  -- This could be added if needed
 
   return nil
 end

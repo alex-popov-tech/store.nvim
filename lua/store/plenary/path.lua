@@ -599,7 +599,8 @@ function Path:copy(opts)
       parents = F.if_nil(opts.parents, false, opts.parents),
       exists_ok = F.if_nil(opts.exists_ok, true, opts.exists_ok),
     })
-    -- scandir not needed for store.nvim functionality
+
+    local scan = require("store.plenary.scandir")
     local data = scan.scan_dir(self.filename, {
       respect_gitignore = F.if_nil(opts.respect_gitignore, false, opts.respect_gitignore),
       hidden = F.if_nil(opts.hidden, true, opts.hidden),
@@ -652,7 +653,7 @@ function Path:rm(opts)
 
   local recursive = F.if_nil(opts.recursive, false, opts.recursive)
   if recursive then
-    -- scandir not needed for store.nvim functionality
+    local scan = require("store.plenary.scandir")
     local abs = self:absolute()
 
     -- first unlink all files

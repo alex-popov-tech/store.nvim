@@ -1,48 +1,14 @@
-local validators = require("store.validators")
-local logger = require("store.logger")
+local validations = require("store.ui.preview.validations")
 local utils = require("store.utils")
+local logger = require("store.logger").createLogger({ context = "preview" })
 
 local M = {}
 
----@class PreviewState
----@field win_id number|nil Window ID
----@field buf_id number|nil Buffer ID
----@field is_open boolean Window open status
----@field state string current component state - "loading", "ready", "error"
----@field content string[] Array of content lines
----@field readme_id string|nil README identifier for cursor position tracking
----@field cursor_positions table Cursor positions for different README files
----@field current_readme_id string|nil Current README identifier
-
----@class PreviewStateUpdate
----@field state string?
----@field content string[]|nil?
----@field readme_id string|nil?
-
----@class PreviewConfig
----@field width number Window width
----@field height number Window height
----@field row number Window row position
----@field col number Window column position
----@field keymaps_applier fun(buf_id: number) Function to apply keymaps to buffer
-
 local DEFAULT_PREVIEW_CONFIG = {
   keymaps_applier = function(buf_id)
-    vim.notify("store.nvim: keymaps for preview window not configured", vim.log.levels.WARN)
+    logger.warn("store.nvim: keymaps for preview window not configured")
   end,
 }
-
----@class Preview
----@field config PreviewConfig Window configuration
----@field state PreviewState Component state
----@field open fun(self: Preview): string|nil
----@field close fun(self: Preview): string|nil
----@field render fun(self: Preview, state: PreviewStateUpdate): string|nil
----@field focus fun(self: Preview): string|nil
----@field resize fun(self: Preview, layout_config: {width: number, height: number, row: number, col: number}): string|nil
----@field save_cursor_on_blur fun(self: Preview): nil
----@field get_window_id fun(self: Preview): number|nil
----@field is_valid fun(self: Preview): boolean
 
 local DEFAULT_STATE = {
   -- Window state
@@ -57,120 +23,6 @@ local DEFAULT_STATE = {
   current_readme_id = nil,
 }
 
----Validate preview window configuration
----@param config PreviewConfig Preview window configuration to validate
----@return string|nil error_message Error message if validation fails, nil if valid
-local function validate_config(config)
-  local err = validators.should_be_table(config, "preview window config must be a table")
-  if err then
-    return err
-  end
-
-  local width_err = validators.should_be_number(config.width, "preview.width must be a number")
-  if width_err then
-    return width_err
-  end
-
-  local height_err = validators.should_be_number(config.height, "preview.height must be a number")
-  if height_err then
-    return height_err
-  end
-
-  local row_err = validators.should_be_number(config.row, "preview.row must be a number")
-  if row_err then
-    return row_err
-  end
-
-  local col_err = validators.should_be_number(config.col, "preview.col must be a number")
-  if col_err then
-    return col_err
-  end
-
-  return validators.should_be_function(config.keymaps_applier, "preview.keymaps_applier must be a function")
-end
-
----Validate preview state for consistency and safety
----@param state PreviewState Preview state to validate
----@return string|nil error_message Error message if validation fails, nil if valid
-local function validate_state(state)
-  local err = validators.should_be_table(state, "preview state must be a table")
-  if err then
-    return err
-  end
-
-  -- Validate state field
-  if state.state ~= nil then
-    local state_err = validators.should_be_string(state.state, "preview.state must be a string")
-    if state_err then
-      return state_err
-    end
-
-    local valid_states = { loading = true, ready = true, error = true }
-    if not valid_states[state.state] then
-      return "preview.state must be one of 'loading', 'ready', 'error', got: " .. state.state
-    end
-  end
-
-  -- Validate content field
-  if state.content ~= nil then
-    if type(state.content) ~= "table" then
-      return "preview.content must be nil or an array of strings, got: " .. type(state.content)
-    end
-
-    for i, line in ipairs(state.content) do
-      if type(line) ~= "string" then
-        return "preview.content[" .. i .. "] must be a string, got: " .. type(line)
-      end
-    end
-  end
-
-  -- Validate readme_id field
-  if state.readme_id ~= nil then
-    local readme_err = validators.should_be_string(state.readme_id, "preview.readme_id must be nil or a string")
-    if readme_err then
-      return readme_err
-    end
-  end
-
-  -- Validate window state fields if present
-  if state.win_id ~= nil then
-    local win_err = validators.should_be_number(state.win_id, "preview.win_id must be nil or a number")
-    if win_err then
-      return win_err
-    end
-  end
-
-  if state.buf_id ~= nil then
-    local buf_err = validators.should_be_number(state.buf_id, "preview.buf_id must be nil or a number")
-    if buf_err then
-      return buf_err
-    end
-  end
-
-  if state.is_open ~= nil then
-    if type(state.is_open) ~= "boolean" then
-      return "preview.is_open must be nil or a boolean, got: " .. type(state.is_open)
-    end
-  end
-
-  -- Validate cursor state fields if present
-  if state.cursor_positions ~= nil then
-    if type(state.cursor_positions) ~= "table" then
-      return "preview.cursor_positions must be nil or a table, got: " .. type(state.cursor_positions)
-    end
-  end
-
-  if state.current_readme_id ~= nil then
-    local current_readme_err =
-      validators.should_be_string(state.current_readme_id, "preview.current_readme_id must be nil or a string")
-    if current_readme_err then
-      return current_readme_err
-    end
-  end
-
-  return nil
-end
-
 -- Preview class
 local Preview = {}
 Preview.__index = Preview
@@ -184,7 +36,7 @@ function M.new(preview_config)
   local config = vim.tbl_deep_extend("force", DEFAULT_PREVIEW_CONFIG, preview_config or {})
 
   -- Validate merged configuration
-  local error_msg = validate_config(config)
+  local error_msg = validations.validate_config(config)
   if error_msg then
     return nil, "Preview window configuration validation failed: " .. error_msg
   end
@@ -230,7 +82,7 @@ function Preview:open()
   local window_opts = {
     conceallevel = 3, -- Required for markview to hide markdown syntax
     concealcursor = "nvc", -- Hide concealed text in normal, visual, command modes
-    wrap = true, -- Enable text wrapping for markdown content
+    wrap = false, -- Disable text wrapping for markdown content
     cursorline = false,
   }
 
@@ -277,7 +129,7 @@ function Preview:render(state)
   local new_state = vim.tbl_deep_extend("force", self.state, state)
 
   -- Validate the merged state before applying it
-  local validation_error = validate_state(new_state)
+  local validation_error = validations.validate_state(new_state)
   if validation_error then
     return "Preview window: Invalid state update - " .. validation_error
   end
@@ -287,12 +139,19 @@ function Preview:render(state)
 
   -- Only schedule the final rendering dispatch using safe self.state
   vim.schedule(function()
+    local start_time = vim.loop.hrtime()
+
     if self.state.state == "loading" then
       self:_render_loading()
     elseif self.state.state == "error" then
       self:_render_error(self.state)
     else
       self:_render_ready(self.state)
+    end
+
+    local elapsed = (vim.loop.hrtime() - start_time) / 1000000
+    if elapsed > 100 then
+      logger.warn(string.format("Preview render took %dms", elapsed))
     end
   end)
 
@@ -319,37 +178,70 @@ function Preview:save_cursor_on_blur()
   self:_save_cursor_position()
 end
 
----Resize the preview window to new layout dimensions
+---Resize the preview window and preserve scroll state
 ---@param layout_config {width: number, height: number, row: number, col: number} New layout configuration
 ---@return string|nil error Error message if resize failed, nil if successful
 function Preview:resize(layout_config)
+  -- Validate layout_config parameters
+  if not layout_config or type(layout_config) ~= "table" then
+    return "Invalid layout_config: must be a table"
+  end
+
+  local required_fields = { "width", "height", "row", "col" }
+  for _, field in ipairs(required_fields) do
+    if not layout_config[field] or type(layout_config[field]) ~= "number" then
+      return "Invalid layout_config: " .. field .. " must be a number"
+    end
+    if layout_config[field] < 0 then
+      return "Invalid layout_config: " .. field .. " must be non-negative"
+    end
+  end
+
   if not self.state.is_open or not self.state.win_id or not vim.api.nvim_win_is_valid(self.state.win_id) then
     return "Cannot resize preview window: window not open or invalid"
   end
 
-  local store_config = require("store.config")
-  local plugin_config = store_config.get()
+  -- Save current scroll position and cursor state
+  local cursor_pos = vim.api.nvim_win_get_cursor(self.state.win_id)
+  local topline = vim.fn.line("w0", self.state.win_id)
+  local current_readme_id = self.state.current_readme_id
 
-  local success, err = pcall(vim.api.nvim_win_set_config, self.state.win_id, {
+  local win_config = {
     relative = "editor",
-    width = layout_config.width,
-    height = layout_config.height,
     row = layout_config.row,
     col = layout_config.col,
-    style = "minimal",
-    border = "rounded",
-    zindex = plugin_config.zindex.base,
-  })
+    width = layout_config.width,
+    height = layout_config.height,
+  }
 
+  local success, err = pcall(vim.api.nvim_win_set_config, self.state.win_id, win_config)
   if not success then
     return "Failed to resize preview window: " .. (err or "unknown error")
   end
 
-  -- Update internal config
+  -- Update config for future operations
   self.config.width = layout_config.width
   self.config.height = layout_config.height
   self.config.row = layout_config.row
   self.config.col = layout_config.col
+
+  -- Save cursor position for current readme if we have one
+  if current_readme_id then
+    self.state.cursor_positions[current_readme_id] = cursor_pos
+  end
+
+  if self.state.content then
+    vim.schedule(function()
+      if vim.api.nvim_win_is_valid(self.state.win_id) then
+        -- Restore scroll position first
+        pcall(vim.api.nvim_win_call, self.state.win_id, function()
+          vim.cmd("normal! " .. topline .. "Gzt")
+        end)
+        -- Then restore cursor position
+        pcall(vim.api.nvim_win_set_cursor, self.state.win_id, cursor_pos)
+      end
+    end)
+  end
 
   return nil
 end
@@ -381,6 +273,7 @@ function Preview:close()
 
   return nil
 end
+
 ---Save current cursor position for the current README
 ---@return nil
 function Preview:_save_cursor_position()
