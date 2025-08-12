@@ -1,0 +1,33 @@
+---@class SortSelectConfig
+---@field width number Window width
+---@field height number Window height
+---@field row number Window row position
+---@field col number Window column position
+---@field current_sort string Current sort type to mark with checkmark
+---@field on_value fun(selected_sort: string) Callback when user selects a sort
+---@field on_exit fun() Callback when user cancels (handles focus restoration)
+---@field sort_types string[]|nil Optional sort types array (falls back to store.sort)
+
+---@class SortSelectState
+---@field win_id number|nil Window ID
+---@field buf_id number|nil Buffer ID
+---@field is_open boolean Window open status
+---@field state string Current component state - "loading", "ready", "error"
+---@field sort_types string[] Array of sort type keys
+---@field current_sort string Current sort selection
+
+---@class SortSelectStateUpdate
+---@field state string?
+---@field current_sort string?
+---@field sort_types string[]?
+
+---@class SortSelect
+---@field config SortSelectConfig Window configuration
+---@field state SortSelectState Component state
+---@field open fun(self: SortSelect): string|nil
+---@field close fun(self: SortSelect): string|nil
+---@field render fun(self: SortSelect, data: SortSelectStateUpdate|nil): string|nil
+---@field focus fun(self: SortSelect): string|nil
+---@field get_window_id fun(self: SortSelect): number|nil
+---@field is_valid fun(self: SortSelect): boolean
+---@field get_selected_sort fun(self: SortSelect): string

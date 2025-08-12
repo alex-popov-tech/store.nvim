@@ -1,6 +1,35 @@
-local validators = require("store.validators")
-local logger = require("store.logger")
+local validations = require("store.ui.heading.validations")
 local utils = require("store.utils")
+local logger = require("store.logger").createLogger({ context = "heading" })
+
+local M = {}
+
+local DEFAULT_HEADING_CONFIG = {}
+
+local DEFAULT_STATE = {
+  -- Window state
+  win_id = nil,
+  buf_id = nil,
+  is_open = false,
+  -- UI state
+  state = "loading",
+  filter_query = "",
+  sort_type = "default",
+  filtered_count = 0,
+  total_count = 0,
+  installable_count = 0,
+  installed_count = 0,
+}
+
+-- ASCII art for store.nvim
+local ASCII_ART = {
+  "      _                              _",
+  "     | |                            (_)",
+  "  ___| |_ ___  _ __ ___   _ ____   ___ _ __ ___",
+  " / __| __/ _ \\| '__/ _ \\ | '_ \\ \\ / / | '_ ` _ \\",
+  " \\__ \\ || (_) | | |  __/_| | | \\ V /| | | | | | |",
+  " |___/\\__\\___/|_|  \\___(_)_| |_|\\_/ |_|_| |_| |_|",
+}
 
 ---Create a formatted line with left and right content, properly spaced and padded
 ---@param width number Total width of the line
@@ -36,183 +65,6 @@ local function format_line(width, left, right)
   end
 end
 
-local M = {}
-
----@class HeadingConfig
----@field width number Window width
----@field height number Window height
----@field row number Window row position
----@field col number Window column position
-
----@class HeadingState
----@field win_id number|nil Window ID
----@field buf_id number|nil Buffer ID
----@field is_open boolean Window open status
----@field state string current component state - "loading", "ready", "error"
----@field filter_query string Current filter query
----@field sort_type string Current sort type
----@field filtered_count number Number of plugins after filtering
----@field total_count number Total number of plugins
-
----@class HeadingStateUpdate
----@field state string?
----@field filter_query string?
----@field sort_type string?
----@field filtered_count number?
----@field total_count number?
-
----@class Heading
----@field config HeadingConfig Window configuration
----@field state HeadingState Component state
----@field open fun(self: Heading): string|nil
----@field close fun(self: Heading): string|nil
----@field render fun(self: Heading, data: HeadingStateUpdate): string|nil
----@field focus fun(self: Heading): string|nil
----@field resize fun(self: Heading, layout_config: {width: number, height: number, row: number, col: number}): string|nil
----@field get_window_id fun(self: Heading): number|nil
----@field is_valid fun(self: Heading): boolean
-
-local DEFAULT_HEADING_CONFIG = {}
-
-local DEFAULT_STATE = {
-  -- Window state
-  win_id = nil,
-  buf_id = nil,
-  is_open = false,
-  -- UI state
-  state = "loading",
-  filter_query = "",
-  sort_type = "default",
-  filtered_count = 0,
-  total_count = 0,
-}
-
--- ASCII art for store.nvim
-local ASCII_ART = {
-  "      _                              _",
-  "     | |                            (_)",
-  "  ___| |_ ___  _ __ ___   _ ____   ___ _ __ ___",
-  " / __| __/ _ \\| '__/ _ \\ | '_ \\ \\ / / | '_ ` _ \\",
-  " \\__ \\ || (_) | | |  __/_| | | \\ V /| | | | | | |",
-  " |___/\\__\\___/|_|  \\___(_)_| |_|\\_/ |_|_| |_| |_|",
-}
-
----Validate heading window configuration
----@param config HeadingConfig Heading window configuration to validate
----@return string|nil error_message Error message if validation fails, nil if valid
-local function validate_config(config)
-  local err = validators.should_be_table(config, "heading window config must be a table")
-  if err then
-    return err
-  end
-
-  local width_err = validators.should_be_number(config.width, "heading.width must be a number")
-  if width_err then
-    return width_err
-  end
-
-  local height_err = validators.should_be_number(config.height, "heading.height must be a number")
-  if height_err then
-    return height_err
-  end
-
-  local row_err = validators.should_be_number(config.row, "heading.row must be a number")
-  if row_err then
-    return row_err
-  end
-
-  local col_err = validators.should_be_number(config.col, "heading.col must be a number")
-  if col_err then
-    return col_err
-  end
-
-  return nil
-end
-
----Validate heading state for consistency and safety
----@param state HeadingState Heading state to validate
----@return string|nil error_message Error message if validation fails, nil if valid
-local function validate_state(state)
-  local err = validators.should_be_table(state, "heading state must be a table")
-  if err then
-    return err
-  end
-
-  -- Validate state field
-  if state.state ~= nil then
-    local state_err = validators.should_be_string(state.state, "heading.state must be a string")
-    if state_err then
-      return state_err
-    end
-
-    local valid_states = { loading = true, ready = true, error = true }
-    if not valid_states[state.state] then
-      return "heading.state must be one of 'loading', 'ready', 'error', got: " .. state.state
-    end
-  end
-
-  -- Validate window state fields
-  if state.win_id ~= nil then
-    local win_err = validators.should_be_number(state.win_id, "heading.win_id must be nil or a number")
-    if win_err then
-      return win_err
-    end
-  end
-
-  if state.buf_id ~= nil then
-    local buf_err = validators.should_be_number(state.buf_id, "heading.buf_id must be nil or a number")
-    if buf_err then
-      return buf_err
-    end
-  end
-
-  if state.is_open ~= nil then
-    if type(state.is_open) ~= "boolean" then
-      return "heading.is_open must be nil or a boolean, got: " .. type(state.is_open)
-    end
-  end
-
-  -- Validate UI state fields
-  if state.filter_query ~= nil then
-    local filter_err = validators.should_be_string(state.filter_query, "heading.filter_query must be nil or a string")
-    if filter_err then
-      return filter_err
-    end
-  end
-
-  if state.sort_type ~= nil then
-    local sort_err = validators.should_be_string(state.sort_type, "heading.sort_type must be nil or a string")
-    if sort_err then
-      return sort_err
-    end
-  end
-
-  if state.filtered_count ~= nil then
-    local filtered_err =
-      validators.should_be_number(state.filtered_count, "heading.filtered_count must be nil or a number")
-    if filtered_err then
-      return filtered_err
-    end
-
-    if state.filtered_count < 0 then
-      return "heading.filtered_count must be non-negative, got: " .. state.filtered_count
-    end
-  end
-
-  if state.total_count ~= nil then
-    local total_err = validators.should_be_number(state.total_count, "heading.total_count must be nil or a number")
-    if total_err then
-      return total_err
-    end
-
-    if state.total_count < 0 then
-      return "heading.total_count must be non-negative, got: " .. state.total_count
-    end
-  end
-
-  return nil
-end
-
 -- Heading class
 local Heading = {}
 Heading.__index = Heading
@@ -226,7 +78,7 @@ function M.new(heading_config)
   local config = vim.tbl_deep_extend("force", DEFAULT_HEADING_CONFIG, heading_config or {})
 
   -- Validate merged configuration
-  local error_msg = validate_config(config)
+  local error_msg = validations.validate_config(config)
   if error_msg then
     return nil, "Heading window configuration validation failed: " .. error_msg
   end
@@ -251,12 +103,16 @@ function Heading:open()
     return nil
   end
 
+  local store_config = require("store.config")
+  local plugin_config = store_config.get()
+
   local window_config = {
     width = self.config.width,
     height = self.config.height,
     row = self.config.row,
     col = self.config.col,
     focusable = false, -- Header should not be focusable
+    zindex = plugin_config.zindex.base,
   }
 
   -- Window options optimized for static header display
@@ -324,8 +180,12 @@ function Heading:_render_ready(state)
   end
   table.insert(content_lines, format_line(width, ASCII_ART[1], filter_text))
 
-  -- Line 1: ASCII art only (empty line)
-  table.insert(content_lines, format_line(width, ASCII_ART[2]))
+  -- Line 1: ASCII art + installable info
+  local installable_text = ""
+  if state.installable_count ~= nil and state.filtered_count ~= nil then
+    installable_text = string.format("%d of %d plugins are installable", state.installable_count, state.filtered_count)
+  end
+  table.insert(content_lines, format_line(width, ASCII_ART[2], installable_text))
 
   -- Line 2: ASCII art + sort info
   local sort_text = ""
@@ -337,8 +197,12 @@ function Heading:_render_ready(state)
   end
   table.insert(content_lines, format_line(width, ASCII_ART[3], sort_text))
 
-  -- Line 3: ASCII art only (empty line)
-  table.insert(content_lines, format_line(width, ASCII_ART[4]))
+  -- Line 3: ASCII art + installed info
+  local installed_text = ""
+  if state.installed_count ~= nil then
+    installed_text = string.format("%d plugins currently installed", state.installed_count)
+  end
+  table.insert(content_lines, format_line(width, ASCII_ART[4], installed_text))
 
   -- Line 4: ASCII art + plugin count
   local count_text = string.format("Showing %d of %d plugins", state.filtered_count, state.total_count)
@@ -367,7 +231,7 @@ function Heading:render(state)
   local new_state = vim.tbl_deep_extend("force", self.state, state)
 
   -- Validate the merged state before applying it
-  local validation_error = validate_state(new_state)
+  local validation_error = validations.validate_state(new_state)
   if validation_error then
     return "Heading window: Invalid state update - " .. validation_error
   end
@@ -426,34 +290,69 @@ function Heading:focus()
   return nil
 end
 
----Resize the heading window to new layout dimensions
+---Resize the heading window and update layout
 ---@param layout_config {width: number, height: number, row: number, col: number} New layout configuration
 ---@return string|nil error Error message if resize failed, nil if successful
 function Heading:resize(layout_config)
+  -- Validate layout_config parameters
+  if not layout_config or type(layout_config) ~= "table" then
+    return "Invalid layout_config: must be a table"
+  end
+
+  local required_fields = {"width", "height", "row", "col"}
+  for _, field in ipairs(required_fields) do
+    if not layout_config[field] or type(layout_config[field]) ~= "number" then
+      return "Invalid layout_config: " .. field .. " must be a number"
+    end
+    if layout_config[field] < 0 then
+      return "Invalid layout_config: " .. field .. " must be non-negative"
+    end
+  end
+
   if not self.state.is_open or not self.state.win_id or not vim.api.nvim_win_is_valid(self.state.win_id) then
     return "Cannot resize heading window: window not open or invalid"
   end
 
-  local success, err = pcall(vim.api.nvim_win_set_config, self.state.win_id, {
-    relative = "editor",
-    width = layout_config.width,
-    height = layout_config.height,
-    row = layout_config.row,
-    col = layout_config.col,
-    style = "minimal",
-    border = "rounded",
-    zindex = 50,
-  })
-
-  if not success then
-    return "Failed to resize heading window: " .. (err or "unknown error")
-  end
-
-  -- Update internal config
+  -- Update config for future renders
   self.config.width = layout_config.width
   self.config.height = layout_config.height
   self.config.row = layout_config.row
   self.config.col = layout_config.col
+
+  local store_config = require("store.config")
+  local plugin_config = store_config.get()
+
+  local win_config = {
+    relative = "editor",
+    row = layout_config.row,
+    col = layout_config.col,
+    width = layout_config.width,
+    height = layout_config.height,
+    style = "minimal",
+    border = "rounded",
+    zindex = plugin_config.zindex.base,
+  }
+
+  local success, err = pcall(vim.api.nvim_win_set_config, self.state.win_id, win_config)
+  if not success then
+    return "Failed to resize heading window: " .. (err or "unknown error")
+  end
+
+  -- Re-render content with new dimensions to ensure proper formatting
+  if self.state.state ~= "loading" then
+    local render_error = self:render({
+      state = self.state.state,
+      filter_query = self.state.filter_query,
+      sort_type = self.state.sort_type,
+      filtered_count = self.state.filtered_count,
+      total_count = self.state.total_count,
+      installable_count = self.state.installable_count,
+      installed_count = self.state.installed_count,
+    })
+    if render_error then
+      logger.warn("Failed to re-render heading after resize: " .. render_error)
+    end
+  end
 
   return nil
 end

@@ -1,84 +1,79 @@
 # store.nvim
 
-A Neovim plugin for browsing and discovering awesome Neovim plugins through an intuitive UI modal interface.
-
-## Features
-
-- **Interactive Modal Interface**: Clean UI with header, list, and preview panes with dynamic resizing
-- **Live README Preview**: Real-time markdown rendering with syntax highlighting
-- **Smart Filtering**: Advanced filtering by name, author, description, and tags with special syntax
-- **Interactive Sorting**: Sort plugins by Recently Updated, Most Stars, or Default order
-- **Customizable Display**: Configure which repository fields to show and their display order
-- **Intelligent Caching**: 24-hour cache with automatic staleness detection and manual refresh
-- **Expanded Database**: Browse 3k+ Neovim plugins with daily updates
-
 ## Installation
 
 ```lua
 {
   "alex-popov-tech/store.nvim",
-  dependencies = {
-    "OXY2DEV/markview.nvim", -- optional, for pretty readme preview / help window
-  },
+  dependencies = { "OXY2DEV/markview.nvim" },
   cmd = "Store",
   keys = {
     { "<leader>s", "<cmd>Store<cr>", desc = "Open Plugin Store" },
   },
   opts = {
     -- optional configuration here
-  },
+  }
 }
 ```
 
 ## Usage
 
-Open the plugin browser:
+Open the with:
 
 - **Command**: `:Store`
 
 - **Lua API**: `require("store").open()`
 
-```lua
--- Custom keybinding
-vim.keymap.set("n", "<leader>s", require("store").open, { desc = "Open Plugin Store" })
-```
-
-## Configuration
+## Default Configuration
 
 ```lua
 require("store").setup({
-  -- Window dimensions (percentages or absolute)
-  width = 0.8,
-  height = 0.8,
+  -- Main window dimensions
+  width = 0.8, -- 80% of screen width
+  height = 0.8, -- 80% of screen height
 
-  -- Layout proportions (must sum to 1.0)
+  -- Window layout proportions (must sum to 1.0)
   proportions = {
-    list = 0.3,     -- 30% for repository list
-    preview = 0.7,  -- 70% for preview pane
+    list = 0.3, -- 30% for repository list
+    preview = 0.7, -- 70% for preview pane
   },
 
-  -- Keybindings (arrays of keys for each action)
+  -- Keybindings configuration
   keybindings = {
-    help = { "?" },                    -- Show help
-    close = { "q", "<esc>", "<c-c>" }, -- Close modal
-    filter = { "f" },                  -- Open filter input
-    refresh = { "r" },                 -- Refresh data
-    open = { "<cr>", "o" },            -- Open selected repository
-    switch_focus = { "<tab>", "<s-tab>" }, -- Switch focus between panes
-    sort = { "s" },                    -- Sort repositories
+    help = { "?" },
+    close = { "q", "<esc>", "<c-c>" },
+    filter = { "f" },
+    reset = { "r" },
+    open = { "<cr>", "o" },
+    switch_focus = { "<tab>", "<s-tab>" },
+    sort = { "s" },
+    install = { "i" },
   },
-
-  -- Repository display options
-  list_fields = { "full_name", "pushed_at", "stars", "forks", "issues", "tags" },
-  full_name_limit = 35,              -- Max characters for repository names
-
-  -- GitHub API (optional)
-  github_token = nil,                -- GitHub token for increased rate limits
 
   -- Behavior
-  preview_debounce = 100,            -- ms delay for preview updates
-  cache_duration = 24 * 60 * 60,    -- 24 hours in seconds
-  logging = "off",                   -- Levels: off, error, warn, log, debug
+  preview_debounce = 100, -- ms delay for preview updates
+  cache_duration = 24 * 60 * 60, -- 24 hours
+  data_source_url = "https://gist.githubusercontent.com/alex-popov-tech/dfb6adf1ee0506461d7dc029a28f851d/raw/db_minified.json", -- URL for plugin data
+
+  -- Logging
+  logging = "off",
+
+  -- List display settings
+  full_name_limit = 35, -- Maximum character length for repository full_name display
+  author_limit = 30, -- Maximum character length for repository author display
+  name_limit = 40, -- Maximum character length for repository name display
+  list_fields = { "is_installed", "is_installable", "stars", "full_name", "pushed_at", "tags" }, -- Fields to display in order
+  -- available are "is_installed"|"is_installable"|"author"|"name"|"full_name"|"stars"|"forks"|"issues"|"tags"|"pushed_at"
+
+  -- Z-index configuration for modal layers
+  zindex = {
+    base = 10, -- Base modal components (heading, list, preview)
+    backdrop = 15, -- Reserved for backdrop/dimming layer
+    popup = 20, -- Popup modals (help, sort, filter)
+  },
+
+  -- Resize behavior
+  resize_debounce = 30, -- ms delay for resize debouncing (10-200ms range)
 })
 ```
 
@@ -94,113 +89,15 @@ Initialize the plugin with optional configuration.
 
 Open the store modal interface.
 
-#### `require("store").close()`
-
-Close the currently open store modal.
-
 ### Commands
 
 #### `:Store`
 
 Opens the store modal interface.
 
-## Keybindings
-
-| Key | Action | Description |
-|-----|--------|-------------|
-| `?` | Help | Show help modal |
-| `q`, `<Esc>`, `<C-c>` | Close | Close the store modal |
-| `f` | Filter | Open filter input |
-| `r` | Refresh | Hard reset caches and refresh all data from network |
-| `s` | Sort | Cycle through sorting options (Default, Recently Updated, Most Stars) |
-| `<CR>`, `o` | Open | Open repository in browser |
-| `<Tab>`, `<S-Tab>` | Switch Focus | Switch between panes |
-
-### Filter Mode
-
-| Key | Action |
-|-----|--------|
-| `<CR>` | Apply filter |
-| `<Esc>` | Cancel filter |
-
-## Examples
-
-### Basic Setup
-
-```lua
-require("store").setup()
-```
-
-### Custom Layout
-
-```lua
-require("store").setup({
-  width = 0.95,
-  height = 0.90,
-  proportions = {
-    list = 0.4,    -- 40% for list
-    preview = 0.6, -- 60% for preview
-  }
-})
-```
-
-### Custom Keybindings
-
-```lua
-require("store").setup({
-  keybindings = {
-    help = "<F1>",
-    close = "<Esc>",
-    filter = "/",
-    refresh = "<F5>",
-    switch_focus = "<C-w>",
-  },
-})
-```
-
-### Development Mode
-
-```lua
-require("store").setup({
-  logging = "debug",
-  cache_duration = 60,      -- 1 minute for development
-  preview_debounce = 50,    -- Faster preview updates
-})
-```
-
-### Customizable List Display
-
-```lua
-require("store").setup({
-  -- Show only essential information
-  list_fields = { "full_name", "stars", "pushed_at" },
-  full_name_limit = 45,  -- Longer names for better readability
-})
-```
-
-```lua
-require("store").setup({
-  -- Minimal display for small screens
-  list_fields = { "full_name", "stars" },
-  full_name_limit = 25,
-})
-```
-
-### GitHub Token Configuration
-
-```lua
-require("store").setup({
-  github_token = "ghp_your_token_here",  -- Increases API rate limits
-})
-```
-
 ## Filtering
 
-The enhanced filtering system supports field-specific searches with special syntax:
-
-### Basic Search
-```lua
--- Search in repository name and author (legacy behavior)
+- Basic:
 telescope
 nvim-lua/plenary
 ```

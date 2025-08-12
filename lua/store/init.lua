@@ -1,6 +1,6 @@
 local config = require("store.config")
+local logger = require("store.logger").createLogger({ context = "init" })
 local StoreModal = require("store.ui.store_modal")
-local logger = require("store.logger")
 
 local M = {}
 
@@ -14,38 +14,26 @@ M.setup = function(args)
   if setup_error then
     error(setup_error)
   end
-  -- Setup logger with logging level from configuration
-  logger.setup({ logging = config.get().logging })
-end
-
----Close the currently open store modal
-M.close = function()
-  if current_modal then
-    logger.debug("Closing store modal")
-    current_modal:close()
-    current_modal = nil
-  end
+  logger.info("Store.nvim initialized successfully")
 end
 
 ---Open the store modal interface
 M.open = function()
-  -- If modal is already open, focus it instead of creating a new one
   if current_modal then
-    current_modal:focus()
+    logger.info("Store modal is already opened")
     return
   end
 
-  logger.debug("Opening store modal")
+  logger.info("Opening store modal")
 
   local modal_config = vim.tbl_deep_extend("force", config.get(), {
     on_close = function()
-      logger.debug("Modal closed via keybinding, clearing reference")
+      logger.info("Store modal closed")
       current_modal = nil
     end,
   })
   local modal_instance, modal_error = StoreModal.new(modal_config)
   if modal_error then
-    logger.error("Failed to create store modal: " .. modal_error)
     error("Failed to create store modal: " .. modal_error)
   end
   current_modal = modal_instance

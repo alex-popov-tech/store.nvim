@@ -33,10 +33,10 @@ local util, parse = {}, {}
 
 -- Helpers --------------------------------------------------
 -------------------------------------------------------------
-local F = require("plenary.functional")
-local J = require("plenary.job")
-local P = require("plenary.path")
-local compat = require("plenary.compat")
+local F = require("store.plenary.functional")
+local J = require("store.plenary.job")
+local P = require("store.plenary.path")
+local compat = require("store.plenary.compat")
 
 -- Utils ----------------------------------------------------
 -------------------------------------------------------------

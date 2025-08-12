@@ -8,26 +8,21 @@ local GAP_BETWEEN_WINDOWS = 2
 
 ---Open a URL in the default browser (cross-platform)
 ---@param url string URL to open
+---@return string? potential error
 function M.open_url(url)
-  local logger = require("store.logger")
-
   if not url or type(url) ~= "string" then
-    logger.error("Invalid URL: must be a non-empty string")
-    return
+    return "Invalid URL: must be a non-empty string"
   end
 
   -- Validate URL format for security
   if not url:match("^https?://[%w%-%.%_%~%:/%?%#%[%]%@%!%$%&%'%(%)%*%+%,%;%=]+$") then
-    logger.error("Invalid URL format: " .. url)
-    return
+    return "Invalid URL format: " .. url
   end
 
-  -- Use vim.ui.open for cross-platform URL opening (Neovim 0.10+)
-  if vim.ui.open then
-    vim.ui.open(url)
-  else
-    logger.error("vim.ui.open not available - please update to Neovim 0.10+")
+  if not vim.ui.open then
+    return "vim.ui.open not available - please update to Neovim 0.10+"
   end
+  vim.ui.open(url)
 end
 
 ---@class FilterCriterion
@@ -45,6 +40,7 @@ local function is_valid_field(field)
     name = true,
     description = true,
     tags = true,
+    tag = true,
     homepage = true,
   }
   return valid_fields[field] == true
@@ -84,7 +80,7 @@ local function create_field_matcher(field, value)
     end
   end
 
-  if field == "tags" then
+  if field == "tags" or field == "tag" then
     return function(repo)
       if not repo.tags or #repo.tags == 0 then
         return false
@@ -248,9 +244,10 @@ end
 
 ---Calculate window dimensions and positions for 3-window layout
 ---@param layout_config {width: number, height: number, proportions: {list: number, preview: number}}
+---@param popup_data {filter: {width: number, height: number}, sort: {lines_count: number, longest_line: number}, help: {lines_count: number, longest_line: number}}
 ---@return StoreModalLayout|nil layout Layout calculations for all windows, nil if validation fails
 ---@return string|nil error Error message if validation fails
-function M.calculate_layout(layout_config)
+function M.calculate_layout(layout_config, popup_data)
   -- Validate input config
   if not layout_config then
     return nil, "Layout config is required"
@@ -276,7 +273,7 @@ function M.calculate_layout(layout_config)
   local total_width = math.floor(screen_width * layout_config.width)
   local total_height = math.floor(screen_height * layout_config.height)
 
-  -- Validate minimum dimensions using constants
+  -- Validate minimum dimensions using global constants
   if total_width < MIN_MODAL_WIDTH or total_height < MIN_MODAL_HEIGHT then
     return nil, string.format("Modal dimensions too small (minimum: %dx%d)", MIN_MODAL_WIDTH, MIN_MODAL_HEIGHT)
   end
@@ -339,25 +336,77 @@ function M.calculate_layout(layout_config)
     },
   }
 
+  -- Validate popup data is provided
+  if not popup_data then
+    return nil, "Popup data is required"
+  end
+
+  if not popup_data.filter or not popup_data.filter.width or not popup_data.filter.height then
+    return nil, "filter dimensions (width, height) must be provided"
+  end
+
+  if not popup_data.sort or not popup_data.sort.lines_count or not popup_data.sort.longest_line then
+    return nil, "sort dimensions (lines_count, longest_line) must be provided"
+  end
+
+  if not popup_data.help or not popup_data.help.lines_count or not popup_data.help.longest_line then
+    return nil, "help dimensions (lines_count, longest_line) must be provided"
+  end
+
+  -- Filter popup: use provided dimensions
+  local filter_width = popup_data.filter.width
+  local filter_height = popup_data.filter.height
+  layout.filter = {
+    width = filter_width,
+    height = filter_height,
+    row = math.floor((screen_height - filter_height) / 2),
+    col = math.floor((screen_width - filter_width) / 2),
+  }
+
+  -- Sort popup: use provided dimensions with padding
+  local sort_width = popup_data.sort.longest_line + 4 -- +4 for border + padding
+  local sort_height = popup_data.sort.lines_count
+
+  layout.sort = {
+    width = sort_width,
+    height = sort_height,
+    row = math.floor((screen_height - sort_height) / 2),
+    col = math.floor((screen_width - sort_width) / 2),
+  }
+
+  -- Help popup: use provided dimensions with padding
+  local help_width = popup_data.help.longest_line + 4 -- +4 for border + padding
+  local help_height = popup_data.help.lines_count
+
+  layout.help = {
+    width = help_width,
+    height = help_height,
+    row = math.floor((screen_height - help_height) / 2),
+    col = math.floor((screen_width - help_width) / 2),
+  }
+
   return layout, nil
 end
 
 ---Create a scratch buffer with standard options for UI components
----@param opts? {filetype?: string, buftype?: string, name?: string} Optional buffer configuration
+---@param opts? {filetype?: string, buftype?: string, name?: string, modifiable?: boolean, readonly?: boolean} Optional buffer configuration
 ---@return number Buffer ID
 function M.create_scratch_buffer(opts)
   opts = opts or {}
-  local buf_id = vim.api.nvim_create_buf(false, true)
+  local buf_id = vim.api.nvim_create_buf(false, false)
 
-  local buf_opts = {
+  local default_buf_opts = {
     modifiable = false,
     swapfile = false,
-    buftype = opts.buftype or "nofile",
+    buftype = "nofile",
     bufhidden = "wipe",
     buflisted = false,
-    filetype = opts.filetype or "text",
+    filetype = "text",
     undolevels = -1,
   }
+
+  -- Merge passed options with defaults
+  local buf_opts = vim.tbl_deep_extend("force", default_buf_opts, opts)
 
   for option, value in pairs(buf_opts) do
     vim.api.nvim_set_option_value(option, value, { buf = buf_id })
@@ -371,34 +420,47 @@ function M.create_scratch_buffer(opts)
 end
 
 ---Create a floating window with standard configuration
----@param params {buf_id: number, config: table, opts: table} Window creation parameters
+---@param params {buf_id: number, config: table, opts?: table, focus?: boolean} Window creation parameters
 ---@param params.buf_id number Buffer ID for the window
 ---@param params.config table Window configuration (width, height, row, col, focusable)
----@param params.opts table Window options to set with nvim_set_option_value
+---@param params.opts? table Window options to set with nvim_set_option_value (optional)
+---@param params.focus? boolean Whether to focus the window (optional, defaults to false)
 ---@return number|nil win_id Window ID on success, nil on error
 ---@return string|nil error_message Error message on failure, nil on success
 function M.create_floating_window(params)
-  local logger = require("store.logger")
+  local validators = require("store.validators")
+  local store_config = require("store.config")
 
-  if not params or type(params) ~= "table" then
-    return nil, "Parameters must be a table"
+  local err = validators.should_be_table(params, "Parameters must be a table")
+  if err then
+    return nil, err
   end
 
-  if not params.buf_id or not vim.api.nvim_buf_is_valid(params.buf_id) then
-    return nil, "buf_id must be a valid buffer ID"
+  err = validators.should_be_valid_buffer(params.buf_id, "buf_id must be a valid buffer ID")
+  if err then
+    return nil, err
   end
 
-  if not params.config or type(params.config) ~= "table" then
-    return nil, "config must be a table"
+  err = validators.should_be_table(params.config, "config must be a table")
+  if err then
+    return nil, err
   end
 
-  if not params.opts or type(params.opts) ~= "table" then
-    return nil, "opts must be a table"
+  local opts = params.opts or {}
+  err = validators.should_be_table(opts, "opts must be a table if provided")
+  if err then
+    return nil, err
+  end
+
+  local enter_window = params.focus or false
+  err = validators.should_be_boolean(enter_window, "focus must be a boolean if provided")
+  if err then
+    return nil, err
   end
 
   local config = params.config
+  local plugin_config = store_config.get()
 
-  -- Build window configuration with standard values
   local win_config = {
     relative = "editor",
     style = "minimal",
@@ -407,17 +469,15 @@ function M.create_floating_window(params)
     row = config.row,
     col = config.col,
     border = "rounded",
-    zindex = 50,
+    zindex = config.zindex or plugin_config.zindex.popup,
     focusable = config.focusable,
   }
 
-  -- Create the window
-  local win_id = vim.api.nvim_open_win(params.buf_id, false, win_config)
+  local win_id = vim.api.nvim_open_win(params.buf_id, enter_window, win_config)
   if not win_id then
     return nil, "Failed to create window"
   end
 
-  -- Common window options shared across UI components
   local common_opts = {
     number = false,
     relativenumber = false,
@@ -426,27 +486,57 @@ function M.create_floating_window(params)
     colorcolumn = "",
   }
 
-  -- Merge common options with component-specific options
-  local final_opts = vim.tbl_deep_extend("force", common_opts, params.opts)
-
-  -- Set window options
+  local final_opts = vim.tbl_deep_extend("force", common_opts, opts)
   for option, value in pairs(final_opts) do
     local success, err = pcall(vim.api.nvim_set_option_value, option, value, { win = win_id })
     if not success then
-      logger.warn(string.format("Failed to set window option %s: %s", option, err))
+      return win_id, string.format("Failed to set window option %s: %s", option, err)
     end
   end
 
   return win_id, nil
 end
 
----Set lines in a buffer, handling modifiable state automatically
+---Set lines in a buffer, handling modifiable and readonly state automatically
 ---@param buf_id number Buffer ID
 ---@param lines string[] Lines to set in the buffer
 function M.set_lines(buf_id, lines)
+  -- Store original states
+  local was_modifiable = vim.api.nvim_get_option_value("modifiable", { buf = buf_id })
+  local was_readonly = vim.api.nvim_get_option_value("readonly", { buf = buf_id })
+
+  -- Temporarily make modifiable and not readonly to set lines
   vim.api.nvim_set_option_value("modifiable", true, { buf = buf_id })
+  vim.api.nvim_set_option_value("readonly", false, { buf = buf_id })
   vim.api.nvim_buf_set_lines(buf_id, 0, -1, false, lines)
-  vim.api.nvim_set_option_value("modifiable", false, { buf = buf_id })
+
+  -- Restore original states
+  vim.api.nvim_set_option_value("modifiable", was_modifiable, { buf = buf_id })
+  vim.api.nvim_set_option_value("readonly", was_readonly, { buf = buf_id })
+end
+
+---Create a debounced version of a function
+---@param func function Function to debounce
+---@param delay number Delay in milliseconds
+---@return function Debounced function
+function M.debounce(func, delay)
+  local timer = nil
+  return function(...)
+    print("debounce func called")
+    local args = { ... }
+    if timer then
+      print("timer exists, stopping")
+      vim.fn.timer_stop(timer)
+    else
+      print("not exists")
+    end
+    timer = vim.fn.timer_start(delay, function()
+      print("before debouncED func called")
+      func(unpack(args))
+      print("after debouncED func called")
+      timer = nil
+    end)
+  end
 end
 
 return M

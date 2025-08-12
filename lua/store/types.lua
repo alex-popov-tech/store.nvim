@@ -12,9 +12,12 @@
 ---@field pretty_open_issues_count string Formatted number of open issues
 ---@field pushed_at number Last push time in Unix timestamp
 ---@field pretty_pushed_at string Formatted last push time
+---@field readme string Readme file path
+---@field install {initial: string, lazyConfig: string}|nil Installation information (nil if not installable)
 
 ---@class Meta
 ---@field total_count number Total number of repositories
+---@field installable_count number Total number of installable repositories (with install field)
 ---@field crawled_at number Unix timestamp of last crawl
 ---@field max_full_name_length number Maximum length of full name
 ---@field max_pretty_stargazers_length number Maximum length of formatted stars

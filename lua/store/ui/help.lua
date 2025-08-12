@@ -1,8 +1,34 @@
-local logger = require("store.logger")
+local logger = require("store.logger").createLogger({ context = "help" })
 
 local M = {}
 
+-- Generate help items from keybindings configuration
+---@param keybindings table Keybindings configuration from user config
+---@return table[] Array of help items with keybinding and action fields
+local function _generate_help_items(keybindings)
+  local help_items = {}
+  local keymaps = require("store.keymaps")
+
+  for action, keys in pairs(keybindings) do
+    local label = keymaps.get_label(action)
+
+    if keys and label then
+      -- Add a line for each key that triggers this action
+      for _, key in ipairs(keys) do
+        table.insert(help_items, {
+          keybinding = key,
+          action = label,
+        })
+      end
+    end
+  end
+
+  return help_items
+end
+
 ---@class HelpConfig
+---@field layout ComponentLayout Layout information for help window
+---@field keybindings table Keybindings configuration from user config
 ---@field on_exit fun() Callback when user cancels (handles focus restoration)
 
 ---@class HelpWindow
@@ -15,22 +41,10 @@ local M = {}
 -- Static instance to prevent multiple opens
 local instance = nil
 
----Help modal configuration - list of keybinding to action pairs
----@type table[]
-local help_items = {
-  { keybinding = "f", action = "Filter repos" },
-  { keybinding = "s", action = "Sort repos" },
-  { keybinding = "<CR>", action = "Open repo" },
-  { keybinding = "r", action = "Refresh list" },
-  { keybinding = "q", action = "Close modal" },
-  { keybinding = "<Esc>", action = "Close modal" },
-  { keybinding = "<Tab>", action = "Switch focus" },
-  { keybinding = "?", action = "Show help" },
-}
-
 ---Calculate column widths for help content
+---@param help_items table[] Array of help items
 ---@return number, number max_key_width, max_action_width
-local function _calculate_column_widths()
+local function _calculate_column_widths(help_items)
   local max_key_width = 3 -- Minimum for "Key" header
   local max_action_width = 6 -- Minimum for "Action" header
 
@@ -60,7 +74,9 @@ end
 ---Generate help content lines
 ---@return string[] List of content lines
 local function _create_content_lines()
-  local key_width, action_width = _calculate_column_widths()
+  -- Generate help items from keybindings configuration
+  local help_items = _generate_help_items(instance.config.keybindings)
+  local key_width, action_width = _calculate_column_widths(help_items)
   local lines = {}
 
   -- Add header
@@ -135,33 +151,26 @@ local function _setup_keymaps(buf_id)
   end
 end
 
----Create floating window
+---Create floating window using provided layout
 ---@param buf_id number Buffer ID
 ---@return number|nil Window ID or nil on failure
 local function _create_window(buf_id)
-  -- Get modal layout information
-  local config = require("store.config").get()
-  local layout = config.layout
-
-  -- Calculate window dimensions based on content
-  local key_width, action_width = _calculate_column_widths()
-  local win_width = key_width + 2 + action_width -- key + spacing + action
-  local win_height = #help_items + 2 -- items + header + separator
-
-  -- Position at top of modal space, overlapping heading (same as sort select)
-  local row = layout.start_row + 1 -- Slightly below modal top
-  local col = layout.start_col + math.floor((layout.total_width - win_width) / 2) -- Centered horizontally within modal
+  -- Use provided layout from instance
+  local help_layout = instance.config.layout
 
   -- Create window
+  local store_config = require("store.config")
+  local plugin_config = store_config.get()
+
   local win_id = vim.api.nvim_open_win(buf_id, true, {
     relative = "editor",
-    width = win_width,
-    height = win_height,
-    row = row,
-    col = col,
+    width = help_layout.width,
+    height = help_layout.height,
+    row = help_layout.row,
+    col = help_layout.col,
     style = "minimal",
     border = "rounded",
-    zindex = 60,
+    zindex = plugin_config.zindex.popup,
   })
 
   return win_id
@@ -172,8 +181,6 @@ function M.close()
   if not instance then
     return
   end
-
-  logger.debug("Closing Help window")
 
   -- Store references before cleanup to prevent race conditions
   local win_id = instance.win_id
@@ -204,7 +211,17 @@ function M.open(config)
 
   -- Validate configuration
   if not config or not config.on_exit then
-    logger.error("Help requires on_exit callback")
+    logger.warn("Help requires on_exit callback")
+    return
+  end
+
+  if not config.layout then
+    logger.warn("Help requires layout information")
+    return
+  end
+
+  if not config.keybindings then
+    logger.warn("Help requires keybindings information")
     return
   end
 
@@ -228,12 +245,10 @@ function M.open(config)
     end
 
     instance.is_open = true
-
-    logger.debug("Help window opened successfully")
   end)
 
   if not success then
-    logger.error("Help window creation failed: " .. tostring(err))
+    logger.warn("Help window creation failed: " .. tostring(err))
 
     -- Cleanup partial state
     if instance then

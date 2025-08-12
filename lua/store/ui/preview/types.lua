@@ -1,0 +1,33 @@
+---@class PreviewState
+---@field win_id number|nil Window ID
+---@field buf_id number|nil Buffer ID
+---@field is_open boolean Window open status
+---@field state string current component state - "loading", "ready", "error"
+---@field content string[] Array of content lines
+---@field readme_id string|nil README identifier for cursor position tracking
+---@field cursor_positions table Cursor positions for different README files
+---@field current_readme_id string|nil Current README identifier
+
+---@class PreviewStateUpdate
+---@field state string?
+---@field content string[]|nil?
+---@field readme_id string|nil?
+
+---@class PreviewConfig
+---@field width number Window width
+---@field height number Window height
+---@field row number Window row position
+---@field col number Window column position
+---@field keymaps_applier fun(buf_id: number) Function to apply keymaps to buffer
+
+---@class Preview
+---@field config PreviewConfig Window configuration
+---@field state PreviewState Component state
+---@field open fun(self: Preview): string|nil
+---@field close fun(self: Preview): string|nil
+---@field render fun(self: Preview, state: PreviewStateUpdate): string|nil
+---@field focus fun(self: Preview): string|nil
+---@field resize fun(self: Preview, layout_config: {width: number, height: number, row: number, col: number}): string|nil
+---@field save_cursor_on_blur fun(self: Preview): nil
+---@field get_window_id fun(self: Preview): number|nil
+---@field is_valid fun(self: Preview): boolean
