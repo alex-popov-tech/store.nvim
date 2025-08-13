@@ -8,7 +8,7 @@ All notable changes to this project will be documented in this file.
 
 ### ✨ Features Added
 
-`store.nvim.crawler`:
+[store.nvim.crawler](https://github.com/alex-popov-tech/store.nvim.crawler):
 - more plugins (especially color themes) - now crawling since `2013` with `6` different topics resulted in `~3665` high-quality plugins in the list
 - installation instructions - plugin readmes are now parsed for installation configurations; currently `~2485` plugins are available for installation through `store.nvim`
 - better filtering - no more outdated (last updated more than `3 years` ago) and incorrect (people's dotfiles, plugin frameworks, plugin managers, no README, etc.) repositories in the list
