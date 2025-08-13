@@ -18,10 +18,7 @@ A Neovim plugin for browsing and installing Neovim plugins through an intuitive 
 {
   "alex-popov-tech/store.nvim",
   dependencies = { "OXY2DEV/markview.nvim" },
-  cmd = "Store",
-  keys = {
-    { "<leader>s", function() require("store").open() end, desc = "Open store.nvim modal" }
-  }
+  cmd = "Store"
 }
 ```
 
