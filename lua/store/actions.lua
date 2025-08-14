@@ -277,20 +277,19 @@ function M.install(instance)
   local confirm_install = require("store.ui.confirm_install")
   local component, err = confirm_install.new({
     repository = repo,
-    on_confirm = function(edited_config)
-      -- Use the edited configuration from the popup
-      local filename = repo.name .. ".lua"
-      local config_dir = vim.fn.stdpath("config")
-      local plugins_dir = config_dir .. "/lua/plugins"
-      local filepath = plugins_dir .. "/" .. filename
+    on_confirm = function(data)
+      -- Use the edited configuration and filepath from the popup
+      local filepath = vim.fn.expand(data.filepath)
+      local dir = vim.fn.fnamemodify(filepath, ":h")
+      local filename = vim.fn.fnamemodify(filepath, ":t")
 
       if vim.fn.filereadable(filepath) == 1 then
-        logger.warn("Plugin file '" .. filename .. "' already exists")
+        logger.warn("Plugin file '" .. filename .. "' already exists at: " .. filepath)
         return
       end
 
-      if vim.fn.isdirectory(plugins_dir) == 0 then
-        vim.fn.mkdir(plugins_dir, "p")
+      if vim.fn.isdirectory(dir) == 0 then
+        vim.fn.mkdir(dir, "p")
       end
 
       local file = io.open(filepath, "w")
@@ -304,11 +303,11 @@ function M.install(instance)
       file:write("\n")
 
       -- Write the edited configuration directly (it already has return prefix)
-      file:write(edited_config)
+      file:write(data.config)
       file:close()
 
-      logger.info("Plugin installed: " .. repo.full_name)
-      vim.notify("Plugin '" .. repo.full_name .. "' configuration created at " .. filename)
+      logger.info("Plugin installed: " .. repo.full_name .. " at " .. filepath)
+      vim.notify("Plugin '" .. repo.full_name .. "' configuration created at " .. filepath)
       vim.notify("Run :Lazy sync to complete installation")
     end,
     on_cancel = function()

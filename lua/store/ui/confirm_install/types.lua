@@ -1,6 +1,6 @@
 ---@class ConfirmInstallConfig
 ---@field repository Repository The repository to install
----@field on_confirm fun(config: string) Callback with edited configuration
+---@field on_confirm fun(data: {config: string, filepath: string}) Callback with edited configuration and filepath
 ---@field on_cancel fun() Callback when cancelled
 
 ---@class ConfirmInstall

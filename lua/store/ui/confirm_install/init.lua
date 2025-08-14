@@ -4,10 +4,10 @@ local validations = require("store.ui.confirm_install.validations")
 
 local M = {}
 
----Extract configuration from markdown buffer
+---Extract configuration and filepath from markdown buffer
 ---@param buf_id number Buffer ID
----@return string|nil Extracted config or nil if not found
-local function extract_config_from_buffer(buf_id)
+---@return table|nil Extracted data {config: string, filepath: string} or nil if not found
+local function extract_data_from_buffer(buf_id)
   if not buf_id or not vim.api.nvim_buf_is_valid(buf_id) then
     return nil
   end
@@ -15,8 +15,16 @@ local function extract_config_from_buffer(buf_id)
   local lines = vim.api.nvim_buf_get_lines(buf_id, 0, -1, false)
   local in_code_block = false
   local config_lines = {}
+  local filepath = nil
 
   for _, line in ipairs(lines) do
+    -- Extract filepath from the Install to line
+    local filepath_match = line:match("^%*%*Install to%*%*: `([^`]+)`")
+    if filepath_match then
+      filepath = filepath_match
+    end
+    
+    -- Extract config from code block
     if line:match("^```lua") then
       in_code_block = true
     elseif line:match("^```") and in_code_block then
@@ -26,11 +34,14 @@ local function extract_config_from_buffer(buf_id)
     end
   end
 
-  if #config_lines == 0 then
+  if #config_lines == 0 or not filepath then
     return nil
   end
 
-  return table.concat(config_lines, "\n")
+  return {
+    config = table.concat(config_lines, "\n"),
+    filepath = filepath
+  }
 end
 
 ---Create buffer content
@@ -46,12 +57,16 @@ local function create_content(repository)
   -- Plugin info
   table.insert(lines, "**Plugin**: " .. repository.full_name)
 
-  -- Installation path with ~ shortening
+  -- Installation path using utility function
+  local utils = require("store.utils")
+  local plugins_folder = utils.get_plugins_folder()
   local filename = repository.name .. ".lua"
-  local config_dir = vim.fn.stdpath("config")
+  local filepath = plugins_folder .. "/" .. filename
+  
+  -- Convert to user-friendly path with ~
   local home = vim.fn.expand("~")
-  local short_path = config_dir:gsub("^" .. vim.pesc(home), "~")
-  table.insert(lines, "**Install to**: `" .. short_path .. "/lua/plugins/" .. filename .. "`")
+  local display_path = filepath:gsub("^" .. vim.pesc(home), "~")
+  table.insert(lines, "**Install to**: `" .. display_path .. "`")
 
   -- Migration info
   if repository.install and repository.install.initial then
@@ -99,15 +114,15 @@ local function setup_keymaps(buf_id, instance)
   -- Normal mode keymaps only
   local keymaps = {
     ["<cr>"] = function()
-      local edited_config = extract_config_from_buffer(buf_id)
-      if not edited_config then
-        logger.warn("Failed to extract configuration from buffer")
+      local extracted_data = extract_data_from_buffer(buf_id)
+      if not extracted_data then
+        logger.warn("Failed to extract configuration and filepath from buffer")
         instance:close()
         return
       end
 
       instance:close()
-      instance.config.on_confirm(edited_config)
+      instance.config.on_confirm(extracted_data)
     end,
     ["<esc>"] = function()
       instance:close()

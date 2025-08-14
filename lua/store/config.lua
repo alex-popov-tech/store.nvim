@@ -17,6 +17,7 @@ local sort = require("store.sort")
 ---@field list_fields? string[] List of fields to display in order: "is_installed"|"is_installable"|"author"|"name"|"full_name"|"stars"|"forks"|"issues"|"tags"|"pushed_at"|"description"
 ---@field zindex? {base: number, backdrop: number, popup: number} Z-index configuration for modal layers
 ---@field resize_debounce? number Debounce delay for resize operations (ms, 10-200 range)
+---@field plugins_folder? string Absolute path to plugins folder (defaults to ~/.config/nvim/lua/plugins)
 
 ---@class UserConfigWithDefaults
 ---@field width number Window width (0.0-1.0 for percentage, >1 for absolute)
@@ -33,6 +34,7 @@ local sort = require("store.sort")
 ---@field list_fields string[] List of fields to display in order: "is_installed"|"is_installable"|"author"|"name"|"full_name"|"stars"|"forks"|"issues"|"tags"|"pushed_at"|"description"
 ---@field zindex {base: number, backdrop: number, popup: number} Z-index configuration for modal layers
 ---@field resize_debounce number Debounce delay for resize operations (ms, 10-200 range)
+---@field plugins_folder? string Absolute path to plugins folder (defaults to ~/.config/nvim/lua/plugins)
 
 ---@class ComponentLayout
 ---@field width number Window width
@@ -172,6 +174,10 @@ local DEFAULT_USER_CONFIG = {
 
   -- Resize behavior
   resize_debounce = 30, -- ms delay for resize debouncing (10-200ms range)
+
+  -- Plugins location (absolute path or starts with ~)
+  -- Defaults to ~/.config/nvim/lua/plugins if not specified
+  plugins_folder = nil,
 }
 
 ---Validate merged configuration against expected structure
@@ -399,6 +405,25 @@ local function validate_config(config)
 
     if config.resize_debounce > 200 then
       return "resize_debounce must be at most 200ms"
+    end
+  end
+
+  if config.plugins_folder ~= nil then
+    local err = validators.should_be_string(config.plugins_folder, "plugins_folder must be a string")
+    if err then
+      return err
+    end
+
+    -- Must be an absolute path or start with ~
+    if not (config.plugins_folder:match("^/") or config.plugins_folder:match("^~")) then
+      return "plugins_folder must be an absolute path (start with / or ~)"
+    end
+
+    -- Expand and check if parent directory exists
+    local expanded_path = vim.fn.expand(config.plugins_folder)
+    local parent_dir = vim.fn.fnamemodify(expanded_path, ":h")
+    if vim.fn.isdirectory(parent_dir) == 0 then
+      return "plugins_folder parent directory does not exist: " .. parent_dir
     end
   end
 

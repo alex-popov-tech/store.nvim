@@ -6,6 +6,16 @@ local MIN_MODAL_HEIGHT = 18
 local HEADER_HEIGHT = 6
 local GAP_BETWEEN_WINDOWS = 2
 
+---Get the plugins folder path from config or default
+---@return string The expanded plugins folder path
+function M.get_plugins_folder()
+  local config = require("store.config").get()
+  if config.plugins_folder then
+    return vim.fn.expand(config.plugins_folder)
+  end
+  return vim.fn.stdpath("config") .. "/lua/plugins"
+end
+
 ---Open a URL in the default browser (cross-platform)
 ---@param url string URL to open
 ---@return string? potential error

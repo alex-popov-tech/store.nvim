@@ -74,6 +74,10 @@ require("store").setup({
 
   -- Resize behavior
   resize_debounce = 30, -- ms delay for resize debouncing (10-200ms range)
+
+  -- Plugin installation folder (absolute path or starts with ~)
+  -- Defaults to ~/.config/nvim/lua/plugins if not specified
+  plugins_folder = nil, -- Example: "~/my-nvim-plugins" or "/opt/nvim/plugins"
 })
 ```
 
