@@ -17,8 +17,8 @@ local DEFAULT_STATE = {
   sort_type = "default",
   filtered_count = 0,
   total_count = 0,
-  installable_count = 0,
   installed_count = 0,
+  plugin_manager_mode = "unknown",
 }
 
 -- ASCII art for store.nvim
@@ -171,46 +171,33 @@ function Heading:_render_ready(state)
   local content_lines = {}
   local width = self.config.width
 
-  -- Line 0: ASCII art + filter info
-  local filter_text = ""
-  if state.filter_query ~= "" then
-    filter_text = "Filter: " .. state.filter_query
-  else
-    filter_text = "Filter: none"
-  end
-  table.insert(content_lines, format_line(width, ASCII_ART[1], filter_text))
+  -- Line 0: ASCII art + plugin manager and installed count
+  local manager_text = string.format("%d plugins managed by %s", state.installed_count, state.plugin_manager_mode)
+  table.insert(content_lines, format_line(width, ASCII_ART[1], manager_text))
 
-  -- Line 1: ASCII art + installable info
-  local installable_text = ""
-  if state.installable_count ~= nil and state.filtered_count ~= nil then
-    installable_text = string.format("%d of %d plugins are installable", state.installable_count, state.filtered_count)
-  end
-  table.insert(content_lines, format_line(width, ASCII_ART[2], installable_text))
+  -- Line 1: ASCII art + showing plugins count
+  local showing_text = string.format("Showing %d plugins", state.filtered_count)
+  table.insert(content_lines, format_line(width, ASCII_ART[2], showing_text))
 
-  -- Line 2: ASCII art + sort info
+  -- Line 2: ASCII art + filter and sort info
+  local filter_text = "Filter: " .. (state.filter_query ~= "" and state.filter_query or "none")
+  table.insert(content_lines, format_line(width, ASCII_ART[3], filter_text))
+
+  -- Line 3: ASCII art + empty line
   local sort_text = ""
-  if state.sort_type then
+  if state.sort_type and state.sort_type ~= "default" then
     local sort = require("store.sort")
-    sort_text = "Sort: " .. sort.sorts[state.sort_type].label
+    sort_text = sort.sorts[state.sort_type].label
   else
-    sort_text = "Sort: Default"
+    sort_text = "Default"
   end
-  table.insert(content_lines, format_line(width, ASCII_ART[3], sort_text))
+  table.insert(content_lines, format_line(width, ASCII_ART[4], "Sort: " .. sort_text))
 
-  -- Line 3: ASCII art + installed info
-  local installed_text = ""
-  if state.installed_count ~= nil then
-    installed_text = string.format("%d plugins currently installed", state.installed_count)
-  end
-  table.insert(content_lines, format_line(width, ASCII_ART[4], installed_text))
-
-  -- Line 4: ASCII art + plugin count
-  local count_text = string.format("Showing %d of %d plugins", state.filtered_count, state.total_count)
-  table.insert(content_lines, format_line(width, ASCII_ART[5], count_text))
+  -- Line 4: ASCII art + empty line
+  table.insert(content_lines, format_line(width, ASCII_ART[5]))
 
   -- Line 5: ASCII art + help text
-  local help_text = "Press ? for help"
-  table.insert(content_lines, format_line(width, ASCII_ART[6], help_text))
+  table.insert(content_lines, format_line(width, ASCII_ART[6], "`?` for help"))
 
   utils.set_lines(self.state.buf_id, content_lines)
 end
@@ -299,7 +286,7 @@ function Heading:resize(layout_config)
     return "Invalid layout_config: must be a table"
   end
 
-  local required_fields = {"width", "height", "row", "col"}
+  local required_fields = { "width", "height", "row", "col" }
   for _, field in ipairs(required_fields) do
     if not layout_config[field] or type(layout_config[field]) ~= "number" then
       return "Invalid layout_config: " .. field .. " must be a number"
@@ -346,7 +333,6 @@ function Heading:resize(layout_config)
       sort_type = self.state.sort_type,
       filtered_count = self.state.filtered_count,
       total_count = self.state.total_count,
-      installable_count = self.state.installable_count,
       installed_count = self.state.installed_count,
     })
     if render_error then

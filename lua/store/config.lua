@@ -4,37 +4,31 @@ local keymaps = require("store.keymaps")
 local sort = require("store.sort")
 
 ---@class UserConfig
----@field width? number Window width (0.0-1.0 for percentage, >1 for absolute)
----@field height? number Window height (0.0-1.0 for percentage, >1 for absolute)
+---@field width? number Window width (0.0-1.0 as percentage of screen width)
+---@field height? number Window height (0.0-1.0 as percentage of screen height)
 ---@field proportions? {list: number, preview: number} Layout proportions for panes (0.0-1.0)
----@field keybindings? {help: string[], close: string[], filter: string[], reset: string[], open: string[], switch_focus: string[], sort: string[], install: string[]} Key binding configuration
+---@field keybindings? {help: string[], close: string[], filter: string[], reset: string[], open: string[], switch_focus: string[], sort: string[], install: string[], hover: string[]} Key binding configuration
 ---@field preview_debounce? number Debounce delay for preview updates (ms)
----@field cache_duration? number Cache duration in seconds
 ---@field logging? string Logging level: "off"|"error"|"warn"|"info"|"debug" (default: "off")
----@field full_name_limit? number Maximum character length for repository full_name display
----@field author_limit? number Maximum character length for repository author display
----@field name_limit? number Maximum character length for repository name display
----@field list_fields? string[] List of fields to display in order: "is_installed"|"is_installable"|"author"|"name"|"full_name"|"stars"|"forks"|"issues"|"tags"|"pushed_at"|"description"
+---@field repository_renderer? RepositoryRenderer Function to render repository data for list display
 ---@field zindex? {base: number, backdrop: number, popup: number} Z-index configuration for modal layers
 ---@field resize_debounce? number Debounce delay for resize operations (ms, 10-200 range)
 ---@field plugins_folder? string Absolute path to plugins folder (defaults to ~/.config/nvim/lua/plugins)
+---@field install_catalogue_urls? table<string, string> Mapping of plugin manager identifiers to catalogue URLs
 
 ---@class UserConfigWithDefaults
----@field width number Window width (0.0-1.0 for percentage, >1 for absolute)
----@field height number Window height (0.0-1.0 for percentage, >1 for absolute)
+---@field width number Window width (0.0-1.0 as percentage of screen width)
+---@field height number Window height (0.0-1.0 as percentage of screen height)
 ---@field proportions {list: number, preview: number} Layout proportions for panes (0.0-1.0)
----@field keybindings {help: string[], close: string[], filter: string[], reset: string[], open: string[], switch_focus: string[], sort: string[], install: string[]} Key binding configuration
+---@field keybindings {help: string[], close: string[], filter: string[], reset: string[], open: string[], switch_focus: string[], sort: string[], install: string[], hover: string[]} Key binding configuration
 ---@field preview_debounce number Debounce delay for preview updates (ms)
----@field cache_duration number Cache duration in seconds
 ---@field data_source_url string URL for fetching plugin data
 ---@field logging string Logging level: "off"|"error"|"warn"|"info"|"debug" (default: "off")
----@field full_name_limit number Maximum character length for repository full_name display
----@field author_limit number Maximum character length for repository author display
----@field name_limit number Maximum character length for repository name display
----@field list_fields string[] List of fields to display in order: "is_installed"|"is_installable"|"author"|"name"|"full_name"|"stars"|"forks"|"issues"|"tags"|"pushed_at"|"description"
+---@field repository_renderer RepositoryRenderer Function to render repository data for list display
 ---@field zindex {base: number, backdrop: number, popup: number} Z-index configuration for modal layers
 ---@field resize_debounce number Debounce delay for resize operations (ms, 10-200 range)
 ---@field plugins_folder? string Absolute path to plugins folder (defaults to ~/.config/nvim/lua/plugins)
+---@field install_catalogue_urls table<string, string>
 
 ---@class ComponentLayout
 ---@field width number Window width
@@ -128,8 +122,41 @@ local function calculate_complete_layout(config)
   })
 end
 
+---Default repository renderer that mimics the original behavior
+---@param repo Repository Repository data to render
+---@param isInstalled boolean Whether the repository is installed
+---@return RepositoryField[] fields Array of field data for display
+local function default_repository_renderer(repo, isInstalled)
+  return {
+    {
+      content = isInstalled and "🏠" or " ",
+      limit = 2,
+    },
+    {
+      content = "⭐" .. repo.pretty.stars,
+      limit = 10,
+    },
+    {
+      content = repo.full_name,
+      limit = 35,
+    },
+    {
+      content = "Last updated " .. repo.pretty.updated_at,
+      limit = 30,
+    },
+    {
+      content = repo.tags and #repo.tags > 0 and table.concat(repo.tags, ", ") or "",
+      limit = 100,
+    },
+    {
+      content = repo.description,
+      limit = 100,
+    },
+  }
+end
+
 local DEFAULT_USER_CONFIG = {
-  -- Main window dimensions in perc
+  -- Main window dimensions as percentage of the editor
   width = 0.8, -- 80% of screen width
   height = 0.8, -- 80% of screen height
 
@@ -149,21 +176,22 @@ local DEFAULT_USER_CONFIG = {
     switch_focus = { "<tab>", "<s-tab>" },
     sort = { "s" },
     install = { "i" },
+    hover = { "K" },
   },
 
   -- Behavior
   preview_debounce = 50, -- ms delay for preview updates
-  cache_duration = 24 * 60 * 60, -- 24 hours
-  data_source_url = "https://gist.githubusercontent.com/alex-popov-tech/dfb6adf1ee0506461d7dc029a28f851d/raw/db_minified.json", -- URL for plugin data
+  data_source_url = "https://gist.githubusercontent.com/alex-popov-tech/92d1366bfeb168d767153a24be1475b5/raw/db.json", -- URL for plugin data
+  install_catalogue_urls = {
+    ["lazy.nvim"] = "https://gist.githubusercontent.com/alex-popov-tech/6629a59e7910aa08b1aa5cdc0519b8b4/raw/lazy.nvim.json",
+    ["vim.pack"] = "https://gist.githubusercontent.com/alex-popov-tech/18a46177d6473e12bc2c854e2548f127/raw/vim.pack.json",
+  },
 
   -- Logging
-  logging = "off",
+  logging = "warn",
 
   -- List display settings
-  full_name_limit = 35, -- Maximum character length for repository full_name display
-  author_limit = 30, -- Maximum character length for repository author display
-  name_limit = 40, -- Maximum character length for repository name display
-  list_fields = { "is_installed", "is_installable", "stars", "full_name", "pushed_at", "tags" }, -- Fields to display in order
+  repository_renderer = default_repository_renderer, -- Function to render repository data for list display
 
   -- Z-index configuration for modal layers
   zindex = {
@@ -193,12 +221,20 @@ local function validate_config(config)
     if err then
       return err
     end
+
+    if config.width > 1 then
+      return "width must be a percentage between 0 and 1"
+    end
   end
 
   if config.height ~= nil then
     local err = validators.should_be_positive_number(config.height, "height must be a positive number")
     if err then
       return err
+    end
+
+    if config.height > 1 then
+      return "height must be a percentage between 0 and 1"
     end
   end
 
@@ -242,22 +278,6 @@ local function validate_config(config)
     end
   end
 
-  if config.cache_duration ~= nil then
-    local err = validators.should_be_positive_number(config.cache_duration, "cache_duration must be a positive number")
-    if err then
-      return err
-    end
-
-    -- Reasonable bounds: minimum 5 minutes, maximum 30 days
-    if config.cache_duration < 300 then
-      return "cache_duration must be at least 300 seconds (5 minutes)"
-    end
-
-    if config.cache_duration > 2592000 then
-      return "cache_duration must be at most 2592000 seconds (30 days)"
-    end
-  end
-
   if config.logging ~= nil then
     local err = validators.should_be_string(config.logging, "logging must be a string")
     if err then
@@ -291,36 +311,29 @@ local function validate_config(config)
     end
   end
 
-  if config.full_name_limit ~= nil then
-    local err =
-      validators.should_be_positive_number(config.full_name_limit, "full_name_limit must be a positive number")
-    if err then
-      return err
+  if config.repository_renderer ~= nil then
+    if type(config.repository_renderer) ~= "function" then
+      return "repository_renderer must be a function"
     end
   end
 
-  if config.author_limit ~= nil then
-    local err = validators.should_be_positive_number(config.author_limit, "author_limit must be a positive number")
-    if err then
-      return err
-    end
-  end
-
-  if config.name_limit ~= nil then
-    local err = validators.should_be_positive_number(config.name_limit, "name_limit must be a positive number")
-    if err then
-      return err
-    end
-  end
-
-  if config.list_fields ~= nil then
-    local err = validators.should_be_table(config.list_fields, "list_fields must be an array")
+  if config.install_catalogue_urls ~= nil then
+    local err = validators.should_be_table(config.install_catalogue_urls, "install_catalogue_urls must be a table")
     if err then
       return err
     end
 
-    if #config.list_fields == 0 then
-      return "list_fields must contain at least one field"
+    for manager, url in pairs(config.install_catalogue_urls) do
+      if type(manager) ~= "string" then
+        return "install_catalogue_urls keys must be strings"
+      end
+      local url_err = validators.should_be_string(url, "install_catalogue_urls['" .. manager .. "'] must be a string")
+      if url_err then
+        return url_err
+      end
+      if not url:match("^https?://") then
+        return "install_catalogue_urls['" .. manager .. "'] must be a valid HTTP(S) URL"
+      end
     end
   end
 
@@ -434,7 +447,7 @@ end
 ---@param user_config? UserConfig User configuration to merge with defaults
 ---@return string|nil error Error message if setup failed, nil if successful
 function M.setup(user_config)
-  local merged_config = vim.tbl_deep_extend("force", DEFAULT_USER_CONFIG, user_config or {})
+  local merged_config = vim.tbl_deep_extend("force", vim.deepcopy(DEFAULT_USER_CONFIG), user_config or {})
 
   local error_msg = validate_config(merged_config)
   if error_msg then

@@ -1,12 +1,13 @@
----@class ConfirmInstallConfig
+---@class InstallModalConfig
 ---@field repository Repository The repository to install
+---@field snippet string Installation snippet sourced from catalogue
 ---@field on_confirm fun(data: {config: string, filepath: string}) Callback with edited configuration and filepath
 ---@field on_cancel fun() Callback when cancelled
 
----@class ConfirmInstall
----@field config ConfirmInstallConfig Configuration
+---@class InstallModal
+---@field config InstallModalConfig Configuration
 ---@field win_id number|nil Window ID
 ---@field buf_id number|nil Buffer ID
 ---@field dimensions {width: number, height: number, row: number, col: number} Cached dimensions
----@field open fun(self: ConfirmInstall): string|nil
----@field close fun(self: ConfirmInstall): string|nil
+---@field open fun(self: InstallModal): string|nil
+---@field close fun(self: InstallModal): string|nil

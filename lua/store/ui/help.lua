@@ -143,10 +143,10 @@ local function _setup_keymaps(buf_id)
   }
 
   for key, callback in pairs(keymaps) do
-    vim.api.nvim_buf_set_keymap(buf_id, "n", key, "", {
+    vim.keymap.set("n", key, callback, {
+      buffer = buf_id,
       noremap = true,
       silent = true,
-      callback = callback,
     })
   end
 end
@@ -231,7 +231,6 @@ function M.open(config)
     win_id = nil,
     buf_id = nil,
     is_open = false,
-    help_items = help_items,
   }
 
   -- Create components with error handling

@@ -18,9 +18,6 @@ function M.close(instance)
   if err then
     return err
   end
-  if instance.config.on_close then
-    instance.config.on_close()
-  end
 end
 
 ---@param instance StoreModal instance of main modal
@@ -48,7 +45,6 @@ function M.filter(instance)
       if query == "" then
         logger.debug("Filter cleared, showing all " .. #instance.state.repos .. " repositories")
         instance.state.currently_displayed_repos = vim.tbl_extend("force", {}, instance.state.repos)
-        instance.state.current_installable_count = instance.state.installable_count
         -- sort only if custom sort
         if instance.state.sort_config.type ~= "default" then
           logger.debug("Sorting " .. #instance.state.currently_displayed_repos .. " filtered repositories")
@@ -66,20 +62,18 @@ function M.filter(instance)
 
       if query ~= "" then
         logger.debug("Filter is non-empty, applying filtering on " .. #instance.state.repos .. " repositories")
-        local filtered, installable_count, error = utils.filter(instance.state.repos, query)
+        local filtered, error = utils.filter(instance.state.repos, query)
         if error ~= nil then
           logger.error("Failed to filter repositories: " .. error)
           return
         end
         instance.state.currently_displayed_repos = filtered
-        instance.state.current_installable_count = installable_count
       end
       instance.state.filter_query = query
 
       local error = instance.heading:render({
         filter_query = instance.state.filter_query,
         filtered_count = #instance.state.currently_displayed_repos,
-        installable_count = instance.state.current_installable_count,
       })
       if error ~= nil then
         logger.warn("Failed to re-render heading after filter: " .. error)
@@ -137,14 +131,14 @@ end
 
 function M.open(instance)
   logger.debug("Action: open repository")
-  if not instance.state.current_repository or not instance.state.current_repository.html_url then
+  if not instance.state.current_repository or not instance.state.current_repository.url then
     logger.warn("No repository selected")
     return
   end
 
-  local error = plugin_utils.open_url(instance.state.current_repository.html_url)
+  local error = plugin_utils.open_url(instance.state.current_repository.url)
   if error then
-    logger.warn("Failed to open URL: " .. instance.state.current_repository.html_url)
+    logger.warn("Failed to open URL: " .. instance.state.current_repository.url)
   else
     logger.info("Opened repository: " .. instance.state.current_repository.full_name)
   end
@@ -196,18 +190,16 @@ function M.sort(instance)
       -- case 1
       if selected_sort == "default" and instance.state.filter_query == "" then
         instance.state.currently_displayed_repos = vim.tbl_extend("force", {}, instance.state.repos)
-        instance.state.current_installable_count = instance.state.installable_count
       end
 
       -- case 2
       if selected_sort == "default" and instance.state.filter_query ~= "" then
-        local filtered, installable, err = utils.filter(instance.state.repos, instance.state.filter_query)
+        local filtered, err = utils.filter(instance.state.repos, instance.state.filter_query)
         if err ~= nil then
           logger.error("Failed to filter repositories: " .. err)
           return
         end
         instance.state.currently_displayed_repos = filtered
-        instance.state.current_installable_count = installable
       end
 
       -- case 3, 4
@@ -268,26 +260,66 @@ function M.install(instance)
     return
   end
 
-  if not repo.install or not repo.install.lazyConfig or repo.install.lazyConfig == "" then
-    logger.warn("Plugin '" .. repo.full_name .. "' is not installable")
+  local manager = instance.state.plugin_manager_mode
+  if not manager or manager == "" then
+    logger.warn("Plugin manager not detected; cannot prepare install snippet")
+    vim.notify("store.nvim: Could not determine plugin manager for installation", vim.log.levels.WARN)
+    return
+  end
+
+  local catalogue = instance.state.install_catalogue
+  if not catalogue or type(catalogue) ~= "table" then
+    local message = "Install catalogue is not available for " .. manager
+    logger.warn(message)
+    vim.notify("store.nvim: " .. message, vim.log.levels.WARN)
+    return
+  end
+
+  local snippet = catalogue[repo.full_name]
+  if not snippet then
+    local message = "Install snippet not available for " .. repo.full_name .. " (" .. manager .. ")"
+    logger.warn(message)
+    vim.notify("store.nvim: " .. message, vim.log.levels.WARN)
     return
   end
 
   -- Phase 1: Show confirmation popup
-  local confirm_install = require("store.ui.confirm_install")
-  local component, err = confirm_install.new({
+  local install_modal = require("store.ui.install_modal")
+  local component, err = install_modal.new({
     repository = repo,
+    snippet = snippet,
     on_confirm = function(data)
       -- Use the edited configuration and filepath from the popup
       local filepath = vim.fn.expand(data.filepath)
       local dir = vim.fn.fnamemodify(filepath, ":h")
       local filename = vim.fn.fnamemodify(filepath, ":t")
 
-      if vim.fn.filereadable(filepath) == 1 then
-        logger.warn("Plugin file '" .. filename .. "' already exists at: " .. filepath)
+      local file_exists = vim.fn.filereadable(filepath) == 1
+
+      -- Handle existing file - append strategy
+      if file_exists then
+        local file = io.open(filepath, "a")
+        if not file then
+          logger.error("Failed to open existing file for append: " .. filepath)
+          return
+        end
+
+        file:write("\n\n-- Plugin: " .. repo.full_name .. "\n")
+        file:write("-- Added by store.nvim on " .. os.date("%Y-%m-%d %H:%M:%S") .. "\n")
+        file:write(data.config)
+        file:close()
+
+        logger.info("Plugin appended: " .. repo.full_name .. " to " .. filepath)
+        vim.notify("Plugin '" .. repo.full_name .. "' appended to " .. filename)
+        if manager == "lazy.nvim" then
+          vim.notify("Run :Lazy sync to complete installation")
+        else
+          vim.notify("Restart Neovim or re-source your config to load vim.pack changes")
+        end
         return
       end
 
+      -- Handle new file - create strategy
       if vim.fn.isdirectory(dir) == 0 then
         vim.fn.mkdir(dir, "p")
       end
@@ -301,14 +333,16 @@ function M.install(instance)
       file:write("-- Plugin: " .. repo.full_name .. "\n")
       file:write("-- Installed via store.nvim\n")
       file:write("\n")
-
-      -- Write the edited configuration directly (it already has return prefix)
       file:write(data.config)
       file:close()
 
       logger.info("Plugin installed: " .. repo.full_name .. " at " .. filepath)
       vim.notify("Plugin '" .. repo.full_name .. "' configuration created at " .. filepath)
-      vim.notify("Run :Lazy sync to complete installation")
+      if manager == "lazy.nvim" then
+        vim.notify("Run :Lazy sync to complete installation")
+      else
+        vim.notify("Restart Neovim or re-source your config to load vim.pack changes")
+      end
     end,
     on_cancel = function()
       logger.info("Installation cancelled")
@@ -344,9 +378,32 @@ function M.reset(instance)
   end)
 
   -- Concurrently fetch installed plugins
-  database.get_installed_plugins(function(installed_data, installed_err)
-    event_handlers.on_installed_plugins(instance, installed_data, installed_err)
+  plugin_utils.get_installed_plugins(function(installed_data, mode, installed_err)
+    event_handlers.on_installed_plugins(instance, installed_data, mode, installed_err)
   end)
+end
+
+function M.hover(instance)
+  logger.debug("Action: hover")
+  local repo = instance.state.current_repository
+  if not repo then
+    logger.warn("No repository selected for hover")
+    return
+  end
+
+  local hover = require("store.ui.hover")
+  local component, err = hover.new({ repository = repo })
+  if err then
+    logger.warn("Failed to create hover component: " .. err)
+    return
+  end
+
+  local show_err = component:show()
+  if show_err then
+    logger.warn("Failed to show hover component: " .. show_err)
+  else
+    logger.debug("Hover displayed for repository: " .. repo.full_name)
+  end
 end
 
 return M

@@ -8,7 +8,7 @@
 ---@field cursor_autocmd_id number|nil Cursor movement autocmd ID
 ---@field cursor_debounce_timer number|nil Cursor movement debounce timer
 ---@field current_repository Repository|nil Currently selected repository
----@field full_name_to_rendering_line_cache {[string]: string} Cache of full name to rendering line
+---@field full_dataset_cache table<string, string> Cache of rendered lines keyed by full_name
 
 ---@class ListStateUpdate
 ---@field state string
@@ -23,8 +23,7 @@
 ---@field on_repo fun(repository: Repository) Callback when cursor moves over repository
 ---@field keymaps_applier fun(buf_id: number) Function to apply keymaps to buffer
 ---@field cursor_debounce_delay number Debounce delay for cursor movement in milliseconds
----@field max_lengths { full_name: number, pretty_stargazers_count: number, pretty_forks_count: number, pretty_open_issues_count: number, pretty_pushed_at: number } Maximum field lengths for table formatting
----@field list_fields string[] List of fields to display in order
+---@field repository_renderer RepositoryRenderer Function to render repository data for list display
 
 ---@class List
 ---@field config ListConfig Window configuration

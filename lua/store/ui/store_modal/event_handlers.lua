@@ -26,74 +26,81 @@ function M.on_db(modal, data, err)
     return
   end
 
-  modal.state.repos = data.items or {}
-  modal.state.installable_count = data.meta.installable_count or 0
+  -- Use the items array from the new database schema
+  local repos = data.items or {}
+  local total_count = #repos
 
+  modal.state.repos = repos
   -- make full copy, so mutational actions like sorting won't affect the original
   modal.state.currently_displayed_repos = vim.tbl_extend("force", {}, modal.state.repos)
-  modal.state.current_installable_count = modal.state.installable_count
 
-  -- Update list component configuration using public API
-  modal.list:update_config({
-    max_lengths = {
-      author = math.min(data.meta.max_author_length or modal.config.author_limit, modal.config.author_limit),
-      name = math.min(data.meta.max_name_length or modal.config.name_limit, modal.config.name_limit),
-      full_name = math.min(
-        data.meta.max_full_name_length or modal.config.full_name_limit,
-        modal.config.full_name_limit
-      ),
-      pretty_stargazers_count = data.meta.max_pretty_stargazers_length or 8,
-      pretty_forks_count = data.meta.max_pretty_forks_length or 8,
-      pretty_open_issues_count = data.meta.max_pretty_issues_length or 8,
-      pretty_pushed_at = 13 + (data.meta.max_pretty_pushed_at_length or 14),
-    },
-  })
+  -- No need to update config - renderer function handles display limits internally
   modal.list:render({ state = "ready", items = modal.state.currently_displayed_repos })
 
   modal.heading:render({
     state = "ready",
-    filtered_count = data.meta.total_count,
-    total_count = data.meta.total_count,
-    installable_count = modal.state.current_installable_count,
-    installed_count = 0, -- Will be updated when installed plugins data loads
+    filtered_count = total_count,
+    total_count = total_count,
+    -- Preserve existing installed_count if already set, otherwise default to 0
+    installed_count = modal.state.total_installed_count or 0,
+    -- Preserve existing plugin_manager_mode if already set
+    plugin_manager_mode = modal.state.plugin_manager_mode or "",
   })
 
-  logger.debug("Plugin data loaded successfully: " .. tostring(data.meta.total_count) .. " repositories")
+  logger.debug("Plugin data loaded successfully: " .. tostring(total_count) .. " repositories")
 end
 
 ---Handle installed plugins data response from database fetch
 ---@param modal StoreModal The modal instance
 ---@param installed_data table|nil Installed plugins data
+---@param mode string|nil Plugin manager mode ("lazy.nvim" or "vim.pack")
 ---@param installed_err string|nil Error message if fetch failed
-function M.on_installed_plugins(modal, installed_data, installed_err)
+function M.on_installed_plugins(modal, installed_data, mode, installed_err)
   if installed_err then
-    logger.error("Failed to fetch installed plugins: " .. installed_err)
+    vim.notify("[store.nvim] Failed to fetch installed plugins: " .. installed_err .. "\nInstallation is not available")
     -- Don't fail the entire modal, just continue without installed info
     return
   end
 
-  logger.debug("Installed plugins loaded successfully: " .. vim.tbl_count(installed_data) .. " plugins")
-
   -- Store installed plugins data in modal state
   modal.state.installed_items = installed_data or {}
+  local installed_count = vim.tbl_count(installed_data or {})
+  modal.state.total_installed_count = installed_count
+  modal.state.plugin_manager_mode = mode or ""
 
-  -- Calculate total installed count from ALL installed plugins (static)
-  local total_installed_count = 0
-  for _ in pairs(modal.state.installed_items) do
-    total_installed_count = total_installed_count + 1
-  end
-  modal.state.total_installed_count = total_installed_count
-
-  -- Update heading with counts
-  modal.heading:render({
-    installable_count = modal.state.current_installable_count,
-    installed_count = modal.state.total_installed_count,
-  })
+  -- Update heading with counts and plugin manager mode
+  modal.heading:render({ installed_count = installed_count, plugin_manager_mode = mode, state = "ready" })
 
   -- Update list component with installed plugins data
   modal.list:render({
     installed_items = installed_data,
   })
+
+  if mode and mode ~= "" then
+    if modal.state.install_catalogue_manager ~= mode or not modal.state.install_catalogue then
+      modal.state.install_catalogue_manager = mode
+
+      database.fetch_install_catalogue(mode, function(catalogue, catalogue_err)
+        if catalogue_err then
+          logger.error(
+            "Failed to load install catalogue for "
+              .. mode
+              .. ": "
+              .. catalogue_err
+              .. "\nInstallation is not available"
+          )
+          return
+        end
+
+        local items = (catalogue and catalogue.items) or {}
+        modal.state.install_catalogue = items
+        logger.debug(string.format("Install catalogue ready for %s with %d entries", mode, vim.tbl_count(items)))
+      end)
+    end
+  else
+    modal.state.install_catalogue = nil
+    modal.state.install_catalogue_manager = nil
+  end
 end
 
 ---@param modal StoreModal

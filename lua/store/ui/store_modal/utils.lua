@@ -26,29 +26,24 @@ end
 ---@param repos Repository[] DB repositories
 ---@param query string non-empty filter query
 ---@return Repository[]? filtered repositories
----@return number installable count
 ---@return string? error message
 function M.filter(repos, query)
   if query == nil or query == "" then
-    return nil, 0, "Cannot filter with empty query"
+    return nil, "Cannot filter with empty query"
   end
 
   local filter_predicate, error_msg = utils.create_advanced_filter(query)
   if error_msg then
-    return nil, 0, error_msg
+    return nil, error_msg
   end
 
   local filtered = {}
-  local filtered_installable_count = 0
   for _, repo in ipairs(repos) do
     if filter_predicate(repo) then
       table.insert(filtered, repo)
-      if repo.install then
-        filtered_installable_count = filtered_installable_count + 1
-      end
     end
   end
-  return filtered, filtered_installable_count, nil
+  return filtered, nil
 end
 
 return M

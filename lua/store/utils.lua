@@ -51,7 +51,6 @@ local function is_valid_field(field)
     description = true,
     tags = true,
     tag = true,
-    homepage = true,
   }
   return valid_fields[field] == true
 end
@@ -116,14 +115,7 @@ local function create_field_matcher(field, value)
     end
   end
 
-  if field == "homepage" then
-    return function(repo)
-      if not repo.homepage then
-        return false
-      end
-      return repo.homepage:lower():find(value_lower, 1, true) ~= nil
-    end
-  end
+  -- Homepage field removed in new schema
 
   -- This should never happen due to validation, but added for safety
   error("Invalid field passed to create_field_matcher: " .. field)
@@ -167,7 +159,7 @@ local function parse_query(query_string)
       end
 
       if not is_valid_field(field) then
-        return {}, "Unknown field '" .. field .. "'. Valid fields: full_name, author, name, description, tags, homepage"
+        return {}, "Unknown field '" .. field .. "'. Valid fields: full_name, author, name, description, tags"
       end
 
       table.insert(criteria, {
@@ -472,13 +464,13 @@ function M.create_floating_window(params)
   local plugin_config = store_config.get()
 
   local win_config = {
-    relative = "editor",
-    style = "minimal",
+    relative = config.relative or "editor",
+    style = config.style or "minimal",
     width = config.width,
     height = config.height,
     row = config.row,
     col = config.col,
-    border = "rounded",
+    border = config.border or "rounded",
     zindex = config.zindex or plugin_config.zindex.popup,
     focusable = config.focusable,
   }
@@ -532,21 +524,113 @@ end
 function M.debounce(func, delay)
   local timer = nil
   return function(...)
-    print("debounce func called")
     local args = { ... }
     if timer then
-      print("timer exists, stopping")
       vim.fn.timer_stop(timer)
-    else
-      print("not exists")
     end
     timer = vim.fn.timer_start(delay, function()
-      print("before debouncED func called")
       func(unpack(args))
-      print("after debouncED func called")
       timer = nil
     end)
   end
+end
+
+-- Cache for installed plugins (persists for session)
+local installed_plugins_cache = nil
+
+---Get list of installed plugins from vim.pack or lazy.nvim (fallback)
+---@param callback fun(data: table<string, boolean>|nil, mode: string|nil, error: string|nil) Callback function with plugin lookup table, plugin manager mode, or error
+function M.get_installed_plugins(callback)
+  -- Return cached result if available
+  if installed_plugins_cache then
+    callback(installed_plugins_cache.data, installed_plugins_cache.mode, installed_plugins_cache.error)
+    return
+  end
+  local logger = require("store.logger").createLogger({ context = "utils" })
+
+  -- Wrapper to cache result and call original callback
+  local function cache_and_callback(data, mode, error)
+    installed_plugins_cache = { data = data, mode = mode, error = error }
+    callback(data, mode, error)
+  end
+
+  -- Try vim.pack first if available and has plugins
+  if vim.pack and type(vim.pack.get) == "function" then
+    local success, pack_data = pcall(vim.pack.get)
+    if success and type(pack_data) == "table" and #pack_data > 0 then
+      logger.debug("vim.pack detected with " .. #pack_data .. " plugins")
+
+      -- Validate that pack_data contains valid plugin objects
+      local valid_data = true
+      for _, plugin_info in ipairs(pack_data) do
+        if type(plugin_info) ~= "table" or not plugin_info.spec or not plugin_info.spec.name then
+          valid_data = false
+          break
+        end
+      end
+
+      if valid_data then
+        -- Convert vim.pack data to lookup table
+        local plugin_lookup = {}
+        local count = 0
+        for _, plugin_info in ipairs(pack_data) do
+          plugin_lookup[plugin_info.spec.name] = true
+          count = count + 1
+        end
+
+        logger.debug("Using vim.pack plugin manager: found " .. count .. " plugins")
+        cache_and_callback(plugin_lookup, "vim.pack", nil)
+        return
+      else
+        logger.debug("vim.pack data structure invalid, falling back to lazy.nvim")
+      end
+    else
+      if success and type(pack_data) == "table" then
+        logger.debug("vim.pack available but no plugins managed by it, falling back to lazy.nvim")
+      else
+        logger.debug("vim.pack.get() failed or returned invalid data, falling back to lazy.nvim")
+      end
+    end
+  end
+
+  -- Fallback to lazy.nvim
+  logger.debug("Falling back to lazy.nvim plugin manager")
+  local config_path = vim.fn.stdpath("config")
+  local lazy_lock_path = config_path .. "/lazy-lock.json"
+
+  -- Check if file exists
+  if vim.fn.filereadable(lazy_lock_path) == 0 then
+    logger.debug("lazy-lock.json not found at: " .. lazy_lock_path)
+    cache_and_callback({}, "lazy.nvim", nil) -- Return empty table, not an error
+    return
+  end
+
+  -- Read and parse the file
+  local success, content = pcall(vim.fn.readfile, lazy_lock_path)
+  if not success then
+    cache_and_callback(nil, nil, "Failed to read lazy-lock.json: " .. tostring(content))
+    return
+  end
+
+  local json_content = table.concat(content, "\n")
+  local json_success, data = pcall(vim.json.decode, json_content)
+  if not json_success then
+    cache_and_callback(nil, nil, "Failed to parse lazy-lock.json: " .. tostring(data))
+    return
+  end
+
+  logger.debug("Successfully parsed lazy-lock.json with " .. vim.tbl_count(data) .. " entries")
+
+  -- Convert to lookup table (just set all keys to true)
+  local plugin_lookup = {}
+  local count = 0
+  for plugin_name, _ in pairs(data) do
+    plugin_lookup[plugin_name] = true
+    count = count + 1
+  end
+
+  logger.debug("lazy.nvim: found " .. count .. " plugins")
+  cache_and_callback(plugin_lookup, "lazy.nvim", nil)
 end
 
 return M

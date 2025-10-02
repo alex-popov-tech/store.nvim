@@ -60,9 +60,20 @@ end
 ---@param modal StoreModal The modal instance
 ---@return string|nil error Error message if validation failed, nil if valid
 function M.validate_modal_open(modal)
-  if not modal.is_open then
-    return "Modal is not open"
+  if not modal or type(modal) ~= "table" then
+    return "Modal instance is invalid"
   end
+
+  local list_win = modal.list and modal.list:get_window_id()
+  if not list_win or not vim.api.nvim_win_is_valid(list_win) then
+    return "Modal list window is not open"
+  end
+
+  local preview_win = modal.preview and modal.preview:get_window_id()
+  if not preview_win or not vim.api.nvim_win_is_valid(preview_win) then
+    return "Modal preview window is not open"
+  end
+
   return nil
 end
 
@@ -119,12 +130,15 @@ function M.validate_modal_state(modal)
     return "Modal state not initialized"
   end
 
-  -- Check for required state fields
-  local required_fields = { "repos", "filtered_repos", "current_focus" }
+  local required_fields = { "repos", "currently_displayed_repos", "filter_query", "sort_config" }
   for _, field in ipairs(required_fields) do
     if modal.state[field] == nil then
       return "Modal state missing required field: " .. field
     end
+  end
+
+  if type(modal.state.sort_config) ~= "table" or modal.state.sort_config.type == nil then
+    return "Modal state has invalid sort_config"
   end
 
   return nil
@@ -142,7 +156,7 @@ function M.validate_repository(repo)
     return "Repository data must be a table"
   end
 
-  local required_fields = { "full_name", "html_url" }
+  local required_fields = { "full_name", "url" }
   for _, field in ipairs(required_fields) do
     if not repo[field] then
       return "Repository missing required field: " .. field

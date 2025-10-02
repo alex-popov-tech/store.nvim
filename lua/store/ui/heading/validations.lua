@@ -115,18 +115,6 @@ function M.validate_state(state)
     end
   end
 
-  if state.installable_count ~= nil then
-    local installable_err =
-      validators.should_be_number(state.installable_count, "heading.installable_count must be nil or a number")
-    if installable_err then
-      return installable_err
-    end
-
-    if state.installable_count < 0 then
-      return "heading.installable_count must be non-negative, got: " .. state.installable_count
-    end
-  end
-
   if state.installed_count ~= nil then
     local installed_err =
       validators.should_be_number(state.installed_count, "heading.installed_count must be nil or a number")

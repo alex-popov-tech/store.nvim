@@ -184,10 +184,10 @@ function SortSelect:_setup_keymaps(buf_id)
   }
 
   for key, callback in pairs(keymaps) do
-    vim.api.nvim_buf_set_keymap(buf_id, "n", key, "", {
+    vim.keymap.set("n", key, callback, {
+      buffer = buf_id,
       noremap = true,
       silent = true,
-      callback = callback,
     })
   end
 

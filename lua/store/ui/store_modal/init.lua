@@ -6,6 +6,7 @@ local heading = require("store.ui.heading")
 local list = require("store.ui.list")
 local preview = require("store.ui.preview")
 local keymaps = require("store.keymaps")
+local utils = require("store.utils")
 local logger = require("store.logger").createLogger({ context = "modal" })
 
 local M = {}
@@ -34,11 +35,10 @@ function M.new(config)
       repos = {},
       currently_displayed_repos = {},
 
-      installable_count = 0, -- Total installable plugins from database meta
-      current_installable_count = 0, -- Current filtered installable plugins count
-
       total_installed_count = 0, -- Total installed plugins from lock file (static)
       installed_items = {}, -- Lookup table of installed plugin names for O(1) checks
+      install_catalogue = nil, -- Cached install catalogue data for detected plugin manager
+      install_catalogue_manager = nil, -- Detected plugin manager identifier
 
       current_focus = nil, -- Track current focused component win_id
       current_repository = nil, -- Track currently selected repository
@@ -64,12 +64,7 @@ function M.new(config)
 
   local list_instance, list_error = list.new(vim.tbl_extend("force", config.layout.list, {
     cursor_debounce_delay = config.preview_debounce,
-    max_lengths = {
-      author = config.author_limit,
-      name = config.name_limit,
-      full_name = config.full_name_limit,
-    },
-    list_fields = config.list_fields,
+    repository_renderer = config.repository_renderer,
     keymaps_applier = keymaps.make_keymaps_for_list(instance),
     on_repo = function(repository)
       event_handlers.on_repo_selected(instance, repository)
@@ -122,8 +117,8 @@ function StoreModal:open()
   end)
 
   -- Concurrently fetch installed plugins
-  database.get_installed_plugins(function(installed_data, installed_err)
-    event_handlers.on_installed_plugins(self, installed_data, installed_err)
+  utils.get_installed_plugins(function(installed_data, mode, installed_err)
+    event_handlers.on_installed_plugins(self, installed_data, mode, installed_err)
   end)
 end
 

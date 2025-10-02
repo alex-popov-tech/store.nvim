@@ -9,8 +9,8 @@
 ---@field sort_type string Current sort type
 ---@field filtered_count number Number of plugins after filtering
 ---@field total_count number Total number of plugins
----@field installable_count number Number of installable plugins in current view
 ---@field installed_count number Number of installed plugins in current view
+---@field plugin_manager_mode string|nil Plugin manager mode ("lazy.nvim" or "vim.pack")
 
 ---@class HeadingStateUpdate
 ---@field state string?
@@ -18,8 +18,8 @@
 ---@field sort_type string?
 ---@field filtered_count number?
 ---@field total_count number?
----@field installable_count number? Number of installable plugins in current view
 ---@field installed_count number? Number of installed plugins in current view
+---@field plugin_manager_mode string? Plugin manager mode ("lazy.nvim" or "vim.pack")
 
 ---@class Heading
 ---@field config HeadingConfig Window configuration

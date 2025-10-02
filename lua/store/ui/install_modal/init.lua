@@ -1,122 +1,150 @@
 local logger = require("store.logger").createLogger({ context = "install" })
 local utils = require("store.utils")
-local validations = require("store.ui.confirm_install.validations")
+local validations = require("store.ui.install_modal.validations")
 
 local M = {}
 
 ---Extract configuration and filepath from markdown buffer
 ---@param buf_id number Buffer ID
----@return table|nil Extracted data {config: string, filepath: string} or nil if not found
+---@return table|nil, string|nil Extracted data {config: string, filepath: string} or nil, error message
 local function extract_data_from_buffer(buf_id)
   if not buf_id or not vim.api.nvim_buf_is_valid(buf_id) then
-    return nil
+    return nil, "Invalid buffer"
   end
 
   local lines = vim.api.nvim_buf_get_lines(buf_id, 0, -1, false)
   local in_code_block = false
+  local in_filepath_block = false
   local config_lines = {}
+  local filepath_lines = {}
   local filepath = nil
 
-  for _, line in ipairs(lines) do
-    -- Extract filepath from the Install to line
-    local filepath_match = line:match("^%*%*Install to%*%*: `([^`]+)`")
-    if filepath_match then
-      filepath = filepath_match
-    end
-    
+  logger.debug("Extracting data from buffer with " .. #lines .. " lines")
+
+  for i, line in ipairs(lines) do
+    logger.debug("Line " .. i .. ": " .. line)
+
+    -- Track filepath block for user path selection
+    if line:match("^```text$") then
+      in_filepath_block = true
+      filepath_lines = {}
+      logger.debug("Started filepath block")
     -- Extract config from code block
-    if line:match("^```lua") then
+    elseif line:match("^```lua") then
       in_code_block = true
-    elseif line:match("^```") and in_code_block then
-      break -- End of lua code block
+      logger.debug("Started lua code block")
+    elseif line:match("^```$") then
+      if in_code_block then
+        logger.debug("Ended lua code block")
+        break -- End of lua code block
+      elseif in_filepath_block then
+        logger.debug("Ended filepath block")
+        in_filepath_block = false
+        if #filepath_lines > 0 then
+          filepath = filepath_lines[1]
+          logger.debug("Captured filepath: " .. filepath)
+        end
+      end
     elseif in_code_block then
       table.insert(config_lines, line)
-    end
-  end
-
-  if #config_lines == 0 or not filepath then
-    return nil
-  end
-
-  return {
-    config = table.concat(config_lines, "\n"),
-    filepath = filepath
-  }
-end
-
----Create buffer content
----@param repository Repository
----@return string[] Content lines
-local function create_content(repository)
-  local lines = {}
-
-  -- Header
-  table.insert(lines, "# Confirm Plugin Installation")
-  table.insert(lines, "")
-
-  -- Plugin info
-  table.insert(lines, "**Plugin**: " .. repository.full_name)
-
-  -- Installation path using utility function
-  local utils = require("store.utils")
-  local plugins_folder = utils.get_plugins_folder()
-  local filename = repository.name .. ".lua"
-  local filepath = plugins_folder .. "/" .. filename
-  
-  -- Convert to user-friendly path with ~
-  local home = vim.fn.expand("~")
-  local display_path = filepath:gsub("^" .. vim.pesc(home), "~")
-  table.insert(lines, "**Install to**: `" .. display_path .. "`")
-
-  -- Migration info
-  if repository.install and repository.install.initial then
-    if repository.install.initial == "lazy.nvim" then
-      table.insert(lines, "**Source**: lazy.nvim native")
-    else
-      table.insert(lines, "**Source**: Migrated from " .. repository.install.initial .. " to lazy.nvim")
-    end
-  end
-
-  table.insert(lines, "")
-  table.insert(lines, "## Configuration:")
-  table.insert(lines, "")
-  table.insert(lines, "```lua")
-
-  -- Add return prefix and configuration lines
-  if repository.install and repository.install.lazyConfig then
-    local config = repository.install.lazyConfig
-    -- Add return prefix if not already present
-    if not config:match("^return ") then
-      config = "return " .. config
-    end
-
-    -- Split config into lines for proper display
-    for line in config:gmatch("([^\n]*)\n?") do
-      if line ~= "" then
-        table.insert(lines, line)
+    elseif in_filepath_block then
+      if vim.trim(line) ~= "" then
+        table.insert(filepath_lines, vim.trim(line))
       end
     end
   end
 
-  table.insert(lines, "```")
+  if #config_lines == 0 then
+    return nil, "No configuration found in code block"
+  end
+
+  if not filepath then
+    return nil, "No filepath found in Install to block"
+  end
+
+  local result = {
+    config = table.concat(config_lines, "\n"),
+    filepath = filepath,
+  }
+
+  logger.debug("Extracted config: " .. result.config)
+  logger.debug("Extracted filepath: " .. result.filepath)
+
+  return result, nil
+end
+
+---Create buffer content
+---@param repository Repository
+---@param snippet string
+---@return string[] Content lines
+local function create_content(repository, snippet)
+  local lines = {}
+
+  -- Header
+  table.insert(lines, "# Confirm installation of `" .. repository.full_name .. "`")
   table.insert(lines, "")
+
+  local plugins_folder = utils.get_plugins_folder()
+  local filename = repository.name .. ".lua"
+  local filepath = plugins_folder .. "/" .. filename
+
+  -- Convert to user-friendly path with ~
+  local home = vim.fn.expand("~")
+  local display_path = filepath:gsub("^" .. vim.pesc(home), "~")
+  table.insert(lines, "**Install to** (create new file or append if exists):")
+  table.insert(lines, "```text")
+  table.insert(lines, display_path)
+  table.insert(lines, "```")
+  table.insert(lines, "## Configuration ( ✏️editable ):")
+  table.insert(lines, "```lua")
+
+  local raw_lines = vim.split(snippet or "", "\n", { plain = true })
+
+  local start_idx = 1
+  local end_idx = #raw_lines
+
+  while start_idx <= end_idx and vim.trim(raw_lines[start_idx]) == "" do
+    start_idx = start_idx + 1
+  end
+
+  while end_idx >= start_idx and vim.trim(raw_lines[end_idx]) == "" do
+    end_idx = end_idx - 1
+  end
+
+  local snippet_lines = {}
+  for i = start_idx, end_idx do
+    table.insert(snippet_lines, raw_lines[i])
+  end
+
+  if #snippet_lines == 0 then
+    snippet_lines = { "-- snippet not provided" }
+  end
+
+  for _, line in ipairs(snippet_lines) do
+    table.insert(lines, line)
+  end
+
+  table.insert(lines, "```")
   table.insert(lines, "---")
   table.insert(lines, "Press `Enter` to confirm or `Esc` to cancel")
-  table.insert(lines, "You can edit the configuration above before installing")
 
   return lines
 end
 
 ---Setup keymaps for the buffer
 ---@param buf_id number Buffer ID
----@param instance ConfirmInstall Instance for callbacks
+---@param instance InstallModal Instance for callbacks
 local function setup_keymaps(buf_id, instance)
   -- Normal mode keymaps only
   local keymaps = {
     ["<cr>"] = function()
-      local extracted_data = extract_data_from_buffer(buf_id)
+      local extracted_data, err = extract_data_from_buffer(buf_id)
       if not extracted_data then
-        logger.warn("Failed to extract configuration and filepath from buffer")
+        local message = "Failed to extract configuration and filepath from buffer"
+        if err then
+          message = message .. "\n" .. err
+        end
+        logger.warn(message)
         instance:close()
         return
       end
@@ -135,10 +163,10 @@ local function setup_keymaps(buf_id, instance)
   }
 
   for key, callback in pairs(keymaps) do
-    vim.api.nvim_buf_set_keymap(buf_id, "n", key, "", {
+    vim.keymap.set("n", key, callback, {
+      buffer = buf_id,
       noremap = true,
       silent = true,
-      callback = callback,
     })
   end
 end
@@ -150,24 +178,22 @@ local function calculate_dimensions(content)
   local config = require("store.config").get()
   local layout = config.layout
 
-  -- Calculate 50% of store modal dimensions
-  local max_width = math.floor(layout.total_width * 0.5)
-  local max_height = math.floor(layout.total_height * 0.5)
+  -- Calculate 70% of store modal dimensions as upper bounds
+  local max_width = math.floor(layout.total_width * 0.7)
+  local max_height = math.floor(layout.total_height * 0.7)
 
-  -- Get actual content dimensions
-  local content_height = #content -- Exact content height, no extra padding
+  -- Measure content dimensions
+  local content_height = #content
   local content_width = 0
-
   for _, line in ipairs(content) do
-    content_width = math.max(content_width, vim.fn.strchars(line))
+    content_width = math.max(content_width, vim.fn.strdisplaywidth(line))
   end
-  content_width = content_width + 4 -- Add padding
 
-  -- Use smaller of content size or max size
-  -- local width = math.min(content_width, max_width)
-  -- local height = math.min(content_height, max_height)
-  local width = max_width
-  local height = max_height
+  local horizontal_padding = 6 -- accounts for border and breathing space
+  local vertical_padding = 4
+
+  local width = math.min(math.max(content_width + horizontal_padding, 40), max_width)
+  local height = math.min(math.max(content_height + vertical_padding, 10), max_height)
 
   -- Center the popup
   local row = math.floor((vim.o.lines - height) / 2)
@@ -182,8 +208,8 @@ local function calculate_dimensions(content)
 end
 
 ---Create new confirm install component
----@param config ConfirmInstallConfig
----@return ConfirmInstall|nil, string|nil Component instance or nil, error message
+---@param config InstallModalConfig
+---@return InstallModal|nil, string|nil Component instance or nil, error message
 function M.new(config)
   -- Validate configuration
   local validation_error = validations.validate_config(config)
@@ -204,7 +230,7 @@ function M.new(config)
   end
 
   -- Create content and calculate dimensions
-  local content = create_content(config.repository)
+  local content = create_content(config.repository, config.snippet)
   local dimensions = calculate_dimensions(content)
 
   -- Set content
@@ -268,11 +294,10 @@ function M:open()
 
   self.win_id = win_id
 
-  -- Enable markview.nvim for beautiful rendering
+  -- Render markdown using markview's strict renderer for consistency with list/preview
   local markview_ok, markview = pcall(require, "markview")
-  if markview_ok then
-    markview.actions.attach(self.buf_id)
-    markview.actions.enable(self.buf_id)
+  if markview_ok and markview.strict_render then
+    markview.strict_render:render(self.buf_id)
   end
 
   return nil
@@ -281,10 +306,10 @@ end
 ---Close the confirmation popup
 ---@return string|nil Error message or nil on success
 function M:close()
-  -- Detach markview before closing
+  -- Clear markview rendering if available before closing the window
   local markview_ok, markview = pcall(require, "markview")
-  if self.buf_id and markview_ok then
-    markview.actions.detach(self.buf_id)
+  if self.buf_id and markview_ok and markview.strict_render then
+    markview.strict_render:clear(self.buf_id)
   end
 
   if self.win_id and vim.api.nvim_win_is_valid(self.win_id) then

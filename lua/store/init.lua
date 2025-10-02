@@ -14,7 +14,6 @@ M.setup = function(args)
   if setup_error then
     error(setup_error)
   end
-  logger.info("Store.nvim initialized successfully")
 end
 
 ---Open the store modal interface
@@ -24,11 +23,8 @@ M.open = function()
     return
   end
 
-  logger.info("Opening store modal")
-
   local modal_config = vim.tbl_deep_extend("force", config.get(), {
     on_close = function()
-      logger.info("Store modal closed")
       current_modal = nil
     end,
   })
