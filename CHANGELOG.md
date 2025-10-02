@@ -2,6 +2,83 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.0.0] - 2025-10-02
+
+### ✨ Features Added
+
+[store.nvim.crawler](https://github.com/alex-popov-tech/store.nvim.crawler):
+- **5,500+ plugins** now available - significantly expanded from 3.6k with enhanced discovery methods
+- **`vim.pack` support** - depending of your used plugin manager, installation modal will show appropriate installation instructions
+- **Universal installation support** - all plugins now have installation instructions with bulletproof verification
+- **Comprehensive plugin discovery** - crawling GitHub with multiple strategies:
+  - Multiple topic tags (`neovim-plugin`, `nvim-plugin`, `vim-plugin`, etc.)
+  - Repository name patterns (containing 'nvim' or 'vim')
+  - Awesome lists integration (`awesome-nvim`, `awesome-vim`)
+- **Smart fallback system** - automatic lazy.nvim configuration generation for plugins without native configs
+- **Enhanced verification** - bulletproof plugin validation ensures quality and installability
+
+`store.nvim`:
+- **📁 Configurable Installation Paths** - Added `plugins_folder` configuration option to customize plugin installation directory with support for absolute paths and `~` expansion
+- **🎯 Hover Information Display** - New hover component for enhanced repository information and quick access to plugin details
+- **🔧 Enhanced UI Components** - Improved installation modal with better user experience and visual consistency
+- **📄 Flexible File Operations** - Added ability to append plugin configurations to existing files during installation - particularly useful for non-lazy.nvim workflows like `vim.pack` or `MiniPack`
+- **🏠 Universal Plugin Installation** - All plugins are now installable (removed installable count limitation from header)
+- **✏️ Direct File Path Editing** - Edit installation file paths directly in the modal interface
+
+### ⚡ Performance Improvements
+
+**🚀 Optimized README Processing**
+- **20-50% faster README rendering** depending on README size and complexity
+- Single-pass regex operations instead of multiple passes
+- Pre-compiled patterns to avoid recompilation overhead
+- Optimized HTML detection with cheaper preliminary checks
+
+**🔄 Revolutionary Caching Strategy**
+- **HEAD-first validation** ensures users have the most recent database **100% of the time** with minimal overhead
+- Smart content-length comparison eliminates unnecessary downloads
+- **Near real-time updates** - database freshness without performance impact
+- Dramatically improved user experience with always up-to-date plugin information
+
+### 🛠️ API Changes
+
+**📊 List View Renderer Update**
+- **Breaking Change**: `repository_renderer` now uses function-based rendering for enhanced flexibility
+
+  **Example Configuration:**
+  ```lua
+  require("store").setup({
+    repository_renderer = function(repo, isInstalled)
+      return {
+        {
+          content = isInstalled and "🏠" or "📦",
+          limit = 2,
+        },
+        {
+          content = "⭐" .. repo.pretty.stars,
+          limit = 10,
+        },
+        {
+          content = repo.full_name,
+          limit = 35,
+        },
+        {
+          content = "Updated " .. repo.pretty.updated_at,
+          limit = 25,
+        },
+        {
+          content = repo.tags and table.concat(repo.tags, ", ") or "",
+          limit = 30,
+        },
+      }
+    end
+  })
+  ```
+
+**🎨 Internal Rendering Improvements**
+- Enhanced markview.nvim integration for better markdown rendering
+- Improved syntax highlighting and preview quality
+- Better handling of complex markdown structures
+
 ## [2.0.0] - 2025-08-12
 
 <img src="https://github.com/user-attachments/assets/07c8b311-3948-4f6c-8364-fa9e6c50440c" />
