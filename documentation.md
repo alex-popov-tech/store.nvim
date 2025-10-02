@@ -48,6 +48,7 @@ require("store").setup({
     switch_focus = { "<tab>", "<s-tab>" },
     sort = { "s" },
     install = { "i" },
+    hover = { "K" },
   },
 
   -- Behavior
@@ -58,12 +59,31 @@ require("store").setup({
   -- Logging
   logging = "off",
 
-  -- List display settings
-  full_name_limit = 35, -- Maximum character length for repository full_name display
-  author_limit = 30, -- Maximum character length for repository author display
-  name_limit = 40, -- Maximum character length for repository name display
-  list_fields = { "is_installed", "is_installable", "stars", "full_name", "pushed_at", "tags" }, -- Fields to display in order
-  -- available are "is_installed"|"is_installable"|"author"|"name"|"full_name"|"stars"|"forks"|"issues"|"tags"|"pushed_at"
+  -- List display settings (using function-based renderer)
+  repository_renderer = function(repo, isInstalled)
+    return {
+      {
+        content = isInstalled and "🏠" or "📦",
+        limit = 2,
+      },
+      {
+        content = "⭐" .. repo.pretty.stars,
+        limit = 10,
+      },
+      {
+        content = repo.full_name,
+        limit = 35,
+      },
+      {
+        content = "Updated " .. repo.pretty.updated_at,
+        limit = 25,
+      },
+      {
+        content = repo.tags and table.concat(repo.tags, ", ") or "",
+        limit = 30,
+      },
+    }
+  end, -- Function to render repository data for list display
 
   -- Z-index configuration for modal layers
   zindex = {

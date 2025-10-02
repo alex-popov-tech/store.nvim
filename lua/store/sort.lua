@@ -5,19 +5,21 @@ M.sorts = {
   most_stars = {
     label = "Most Stars",
     fn = function(a, b, _)
-      return (a.stargazers_count or 0) > (b.stargazers_count or 0)
+      return (a.stars or 0) > (b.stars or 0)
     end,
   },
   recently_updated = {
     label = "Recently Updated",
     fn = function(a, b, _)
-      return (a.pushed_at or 0) > (b.pushed_at or 0)
+      -- Compare ISO date strings directly
+      return (a.updated_at or "") > (b.updated_at or "")
     end,
   },
   recently_created = {
     label = "Recently Created",
     fn = function(a, b, _)
-      return (a.created_at or 0) > (b.created_at or 0)
+      -- Compare ISO date strings directly
+      return (a.created_at or "") > (b.created_at or "")
     end,
   },
   installed = {

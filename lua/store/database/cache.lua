@@ -1,10 +1,13 @@
 local db_utils = require("store.database.utils")
 local validators = require("store.validators")
-local Path = require("store.plenary.path")
-local config = require("store.config")
 local logger = require("store.logger").createLogger({ context = "cache" })
 
 local M = {}
+
+local INSTALL_CACHE_FILES = {
+  ["lazy.nvim"] = "lazy.nvim.json",
+  ["vim.pack"] = "vim.pack.json",
+}
 
 -- In-memory cache storage (no timestamps, just recent data)
 ---@type Database|nil
@@ -12,6 +15,9 @@ local db_memory_cache = nil
 
 ---@type table<string, string[]> -- maps plugin full_name to README content lines
 local readmes_memory_cache = {}
+
+---@type table<string, table|nil>
+local install_catalogue_memory_cache = {}
 
 ---Save README content to cache
 ---@param full_name string The repository full_name (e.g., "owner/repo")
@@ -41,14 +47,19 @@ function M.save_readme(full_name, content)
   end
 
   -- Write README content
+  local processed_content = table.concat(content, "\n")
+
   vim.schedule(function()
     local success, err = pcall(function()
-      readme_file:write(table.concat(content, "\n"), "w")
+      readme_file:write(processed_content, "w")
     end)
 
     if not success then
       logger.error("Failed to save README cache for " .. full_name .. ": " .. tostring(err))
+      return
     end
+
+    logger.debug("💾 README SAVED: " .. full_name .. " (" .. #processed_content .. " bytes)")
   end)
 
   return nil -- Success
@@ -87,20 +98,56 @@ function M.save_db(content)
   return nil -- Success
 end
 
----Get cached README content
+---Persist install catalogue for a specific plugin manager
+---@param manager string Plugin manager identifier ("lazy.nvim"|"vim.pack")
+---@param content table Catalogue JSON payload
+---@return string|nil error Error message if save failed, nil on success
+function M.save_install_catalogue(manager, content)
+  local cache_filename = INSTALL_CACHE_FILES[manager]
+  if not cache_filename then
+    return "Unknown plugin manager: " .. tostring(manager)
+  end
+
+  local err = validators.should_be_table(content, "content must be a table")
+  if err then
+    return err
+  end
+
+  install_catalogue_memory_cache[manager] = content
+
+  local cache_dir = db_utils.get_cache_dir()
+  local cache_file = cache_dir / cache_filename
+
+  if not cache_dir:exists() then
+    cache_dir:mkdir({ parents = true })
+  end
+
+  vim.schedule(function()
+    local success, write_err = pcall(function()
+      cache_file:write(vim.json.encode(content), "w")
+    end)
+    if not success then
+      logger.error("Failed to save install catalogue for " .. manager .. ": " .. tostring(write_err))
+    end
+  end)
+
+  return nil
+end
+
+---Get cached README content with cache type
 ---@param full_name string The repository full_name (e.g., "owner/repo")
----@return string[]|nil content The README content as array of lines, nil if not cached or stale
----@return string|nil error Error message if an error occurred
+---@return "memory"|"file"|"none" cache_type Type of cache found
+---@return string[]|nil content The README content as array of lines, nil if not cached
 function M.get_readme(full_name)
   if not full_name then
-    return nil, "get_readme: missing required parameter 'full_name'"
+    return "none", nil
   end
 
   -- Check memory cache first
   local memory_content = readmes_memory_cache[full_name]
   if memory_content then
-    logger.debug("Cache hit (memory): " .. full_name)
-    return memory_content, nil
+    logger.debug("📦 README Memory cache hit: " .. full_name)
+    return "memory", memory_content
   end
 
   -- Check file cache second
@@ -110,30 +157,8 @@ function M.get_readme(full_name)
 
   -- Check if file exists
   if not readme_file:exists() then
-    logger.debug("Cache miss: " .. full_name)
-    return nil, nil
-  end
-
-  -- Check if file is not stale
-  local max_age_seconds = config.get().cache_duration
-  local stat, err = vim.loop.fs_stat(readme_file:absolute())
-  if not stat then
-    return nil, "Could not stat README cache file: " .. readme_file:absolute() .. ", error - " .. err
-  end
-
-  local age = os.time() - stat.mtime.sec
-  if age > max_age_seconds then
-    logger.debug("Stale cache removed: " .. age .. "s old")
-    -- Delete stale file
-    vim.schedule(function()
-      local ok, del_err = pcall(function()
-        readme_file:rm()
-      end)
-      if not ok then
-        logger.warn("Failed to delete stale README cache file: " .. tostring(del_err))
-      end
-    end)
-    return nil, nil -- Not an error, just needs refresh
+    logger.debug("❌ README Cache miss: " .. full_name)
+    return "none", nil
   end
 
   -- Read content from file
@@ -143,23 +168,23 @@ function M.get_readme(full_name)
   end)
 
   if not success then
-    return nil, "Failed to read README cache file: " .. readme_file:absolute() .. " - " .. tostring(file_content)
+    return "none", nil
   end
 
   -- Update memory cache with file content
   readmes_memory_cache[full_name] = file_content
-  logger.debug("Cache hit (file): " .. full_name)
-  return file_content, nil
+  logger.debug("📁 README File cache hit: " .. full_name)
+  return "file", file_content
 end
 
----Get cached database
----@return Database|nil content The database, nil if not cached or stale
----@return string|nil error Error message if an error occurred
+---Get cached database with cache type
+---@return "memory"|"file"|"none" cache_type Type of cache found
+---@return Database|nil data The database, nil if not cached
 function M.get_db()
   -- Check memory cache first
   if db_memory_cache then
-    logger.debug("Database cache hit (memory)")
-    return db_memory_cache, nil
+    logger.debug("📦 Memory cache hit")
+    return "memory", db_memory_cache
   end
 
   -- Check file cache second
@@ -167,31 +192,14 @@ function M.get_db()
   local db_file = cache_dir / "db.json"
 
   if not db_file:exists() then
-    logger.debug("Database cache miss")
-    return nil, nil
+    logger.debug("❌ No cache file")
+    return "none", nil
   end
 
-  -- Check if file exists and is not stale
-  local max_age_seconds = config.get().cache_duration
-
+  -- Get file stats and read content
   local stat, err = vim.loop.fs_stat(db_file:absolute())
   if not stat or err ~= nil then
-    return nil, "Could not stat database cache file: " .. db_file:absolute() .. ", error - " .. err
-  end
-
-  local age = os.time() - stat.mtime.sec
-  if age > max_age_seconds then
-    logger.debug("Stale cache removed: " .. age .. "s old")
-    -- Delete stale file
-    vim.schedule(function()
-      local ok, del_err = pcall(function()
-        db_file:rm()
-      end)
-      if not ok then
-        logger.warn("Failed to delete stale database cache file: " .. tostring(del_err))
-      end
-    end)
-    return nil, nil
+    return "none", nil
   end
 
   -- Read and parse content
@@ -200,19 +208,58 @@ function M.get_db()
   end)
 
   if not success then
-    return nil, "Failed to read database cache file: " .. db_file:absolute() .. " - " .. tostring(content)
+    return "none", nil
   end
 
   -- Update memory cache with file content
   db_memory_cache = content
-  logger.debug("Database cache hit (file)")
-  return content, nil
+  logger.debug("📁 File cache hit: " .. stat.size .. " bytes")
+  return "file", content
+end
+
+---Retrieve cached install catalogue for a plugin manager
+---@param manager string Plugin manager identifier
+---@return "memory"|"file"|"none" cache_type Cache source type
+---@return table|nil content Catalogue payload or nil
+function M.get_install_catalogue(manager)
+  local cache_filename = INSTALL_CACHE_FILES[manager]
+  if not cache_filename then
+    return "none", nil
+  end
+
+  local memory_catalogue = install_catalogue_memory_cache[manager]
+  if memory_catalogue then
+    logger.debug("📦 Install catalogue memory cache hit for manager: " .. manager)
+    return "memory", memory_catalogue
+  end
+
+  local cache_dir = db_utils.get_cache_dir()
+  local cache_file = cache_dir / cache_filename
+
+  if not cache_file:exists() then
+    logger.debug("❌ Install catalogue cache miss for manager: " .. manager)
+    return "none", nil
+  end
+
+  local success, content = pcall(function()
+    return vim.json.decode(cache_file:read())
+  end)
+
+  if not success then
+    logger.warn("Failed to read install catalogue cache for " .. manager .. ": " .. tostring(content))
+    return "none", nil
+  end
+
+  install_catalogue_memory_cache[manager] = content
+  logger.debug("📁 Install catalogue file cache hit for manager: " .. manager)
+  return "file", content
 end
 
 ---Clear all in-memory caches
 function M.clear_memory_cache()
   readmes_memory_cache = {}
   db_memory_cache = nil
+  install_catalogue_memory_cache = {}
 end
 
 ---Clear all file caches

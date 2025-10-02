@@ -12,6 +12,7 @@ local labels = {
   switch_focus = "Switch focus between panes",
   sort = "Sort repositories",
   install = "Install plugin to lazy.nvim",
+  hover = "Show repository details",
 }
 
 -- Get label for an action
@@ -39,6 +40,7 @@ local function get_handler(name)
     sort = actions.sort,
     install = actions.install,
     reset = actions.reset,
+    hover = actions.hover,
   }
   return handlers[name]
 end
@@ -78,7 +80,7 @@ end
 function M.make_keymaps_for_list(instance)
   return make_keymaps_for_actions(
     instance,
-    { "close", "help", "switch_focus", "filter", "reset", "sort", "open", "install" }
+    { "close", "help", "switch_focus", "filter", "reset", "sort", "open", "install", "hover" }
   )
 end
 
@@ -86,7 +88,10 @@ end
 ---@param instance StoreModal Modal instance
 ---@return fun(buf_id: number) Function to apply preview keymaps to buffer
 function M.make_keymaps_for_preview(instance)
-  return make_keymaps_for_actions(instance, { "close", "help", "switch_focus", "filter", "reset", "sort", "install" })
+  return make_keymaps_for_actions(
+    instance,
+    { "close", "help", "switch_focus", "filter", "reset", "sort", "install", "open" }
+  )
 end
 
 return M

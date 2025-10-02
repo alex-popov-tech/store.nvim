@@ -47,9 +47,10 @@ function M.validate_config(config)
     return debounce_err
   end
 
-  local list_fields_err = validators.should_be_table(config.list_fields, "list.list_fields must be an array")
-  if list_fields_err then
-    return list_fields_err
+  local renderer_err =
+    validators.should_be_function(config.repository_renderer, "list.repository_renderer must be a function")
+  if renderer_err then
+    return renderer_err
   end
 
   return nil

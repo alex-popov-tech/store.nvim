@@ -167,19 +167,19 @@ function Filter:_setup_keymaps(buf_id)
 
   -- Set up normal mode keymaps
   for key, callback in pairs(normal_keymaps) do
-    vim.api.nvim_buf_set_keymap(buf_id, "n", key, "", {
+    vim.keymap.set("n", key, callback, {
+      buffer = buf_id,
       noremap = true,
       silent = true,
-      callback = callback,
     })
   end
 
   -- Set up insert mode keymaps
   for key, callback in pairs(insert_keymaps) do
-    vim.api.nvim_buf_set_keymap(buf_id, "i", key, "", {
+    vim.keymap.set("i", key, callback, {
+      buffer = buf_id,
       noremap = true,
       silent = true,
-      callback = callback,
     })
   end
 

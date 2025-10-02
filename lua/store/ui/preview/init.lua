@@ -45,8 +45,8 @@ function M.new(preview_config)
     config = config,
     state = vim.tbl_deep_extend("force", DEFAULT_STATE, {
       buf_id = utils.create_scratch_buffer({
-        filetype = "markdown",
-        buftype = "",
+        filetype = "markdown", -- Set to markdown for proper markview rendering
+        buftype = "", -- Keep as nofile for scratch buffer behavior
       }),
     }),
   }
@@ -99,10 +99,15 @@ function Preview:open()
   self.state.is_open = true
 
   local markview_ok, markview = pcall(require, "markview")
-  if markview_ok then
-    markview.actions.attach(self.state.buf_id)
-    markview.actions.enable(self.state.buf_id)
+  if markview_ok and markview.strict_render then
+    -- markview.strict_render:clear(self.state.buf_id)  -- Clear any previous render
+    markview.strict_render:render(self.state.buf_id)
   end
+  -- local markview_ok, markview = pcall(require, "markview")
+  -- if markview_ok then
+  --   markview.actions.attach(self.state.buf_id)
+  --   markview.actions.enable(self.state.buf_id)
+  -- end
 
   -- Set default content
   return self:render({ state = "loading" })
@@ -151,14 +156,14 @@ function Preview:render(state)
 
     local elapsed = (vim.loop.hrtime() - start_time) / 1000000
     if elapsed > 100 then
-      logger.warn(string.format("Preview render took %dms", elapsed))
+      logger.debug(string.format("Preview render took %dms", elapsed))
     end
   end)
 
   return nil
 end
 
----Focus the preview window
+---Focus the preview window and restore cursor position
 ---@return string|nil error Error message on failure, nil on success
 function Preview:focus()
   if not self.state.is_open then
@@ -169,6 +174,12 @@ function Preview:focus()
   end
 
   vim.api.nvim_set_current_win(self.state.win_id)
+
+  -- Restore cursor position for current README if available
+  if self.state.current_readme_id then
+    self:_restore_cursor_position(self.state.current_readme_id)
+  end
+
   return nil
 end
 
@@ -254,9 +265,10 @@ function Preview:close()
     return nil
   end
 
+  -- Clear strict render instead of detaching (for preview-only buffers)
   local markview_ok, markview = pcall(require, "markview")
-  if self.state.buf_id and markview_ok then
-    markview.actions.detach(self.state.buf_id)
+  if markview_ok and markview.strict_render then
+    markview.strict_render:clear(self.state.buf_id)
   end
 
   -- Close window
@@ -335,9 +347,11 @@ function Preview:_render_ready(state)
   local content_lines = state.content or { "No content available" }
   utils.set_lines(self.state.buf_id, content_lines)
 
+  -- Use strict_render for preview-only scenarios (recommended by markview author)
   local markview_ok, markview = pcall(require, "markview")
-  if markview_ok then
-    markview.render(self.state.buf_id, { enable = true, hybrid_mode = false }, nil)
+  if markview_ok and markview.strict_render then
+    markview.strict_render:clear(self.state.buf_id) -- Clear any previous render
+    markview.strict_render:render(self.state.buf_id)
   end
 
   -- Update current README ID and restore cursor position

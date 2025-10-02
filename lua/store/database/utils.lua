@@ -19,80 +19,134 @@ function M.repository_to_readme_key(full_name)
   return full_name:gsub("/", "-") .. ".md"
 end
 
+---Resolve README branch/path reference into components
+---@param readme string|nil README reference in form "branch/path"
+---@return string branch
+---@return string filepath
+function M.parse_readme_reference(readme)
+  if type(readme) == "string" and readme ~= "" then
+    local branch, path = readme:match("^([^/]+)/(.+)$")
+    if branch and path then
+      return branch, path
+    end
+  end
 
--- Process README content in a single pass: clean HTML tags, filter images, and collapse empty lines
+  -- Fall back to HEAD/README.md when metadata is missing or malformed
+  return "HEAD", "README.md"
+end
+
+---Build GitHub raw URL for README based on repository metadata
+---@param full_name string Repository full name
+---@param readme string|nil README reference (branch/path)
+---@return string url Fully qualified raw README URL
+function M.build_github_readme_url(full_name, readme)
+  local branch, path = M.parse_readme_reference(readme)
+  return string.format("https://raw.githubusercontent.com/%s/%s/%s", full_name, branch, path)
+end
+
+---Build GitLab raw URL for README based on repository metadata
+---@param full_name string Repository full name
+---@param readme string|nil README reference (branch/path)
+---@return string url Fully qualified raw README URL
+function M.build_gitlab_readme_url(full_name, readme)
+  local branch, path = M.parse_readme_reference(readme)
+  return string.format("https://gitlab.com/%s/-/raw/%s/%s?ref_type=heads", full_name, branch, path)
+end
+
+-- Process README content optimally: clean HTML tags, filter images, and collapse empty lines
 ---@param content string Raw README content as string
 ---@return string[] Processed lines with HTML tags removed, images filtered, and empty lines collapsed
 function M.process_readme_content(content)
+  -- Single regex pass for image removal (combined patterns for better performance)
+  content = content:gsub("<%s*[Ii][Mm][Gg][^>]*/?%s*>", "")
+
   local lines = vim.split(content, "\n", { plain = true })
-  local processed = {}
-  local count = 0
-  local prev_was_empty = false
+  local result = {}
+  local result_count = 0
   local in_code_block = false
+  local prev_was_empty = false
+
+  -- Pre-compile pattern to avoid recompilation in loop
+  local code_fence_pattern = "^%s*```"
 
   for i = 1, #lines do
     local line = lines[i]
 
     -- Check for fenced code block markers (```)
-    local code_fence_match = line:match("^%s*```")
-    if code_fence_match then
+    if line:match(code_fence_pattern) then
       in_code_block = not in_code_block
-      -- Process the fence line normally (trim it)
-      local trimmed_line = line:match("^%s*(.-)%s*$")
-      count = count + 1
-      processed[count] = trimmed_line
+      -- Single gsub operation for trim
+      local trimmed = line:gsub("^%s*(.-)%s*$", "%1")
+      result_count = result_count + 1
+      result[result_count] = trimmed
       prev_was_empty = false
     elseif in_code_block then
       -- Inside code block - preserve original whitespace
-      count = count + 1
-      processed[count] = line
+      result_count = result_count + 1
+      result[result_count] = line
       prev_was_empty = false
     else
       -- Outside code block - apply normal processing
-      -- OPTIMIZATION: Early empty line detection - trim both leading and trailing whitespace
-      local trimmed_line = line:match("^%s*(.-)%s*$")
-      if trimmed_line == "" then
-        -- Skip expensive processing for empty lines - go directly to step 3
+      -- Single trim operation
+      local trimmed = line:gsub("^%s*(.-)%s*$", "%1")
+
+      if trimmed == "" then
+        -- Handle empty lines with collapsing
         if not prev_was_empty then
-          count = count + 1
-          processed[count] = ""
-        end
-        prev_was_empty = true
-      elseif trimmed_line:match("^!%[[^%]]*%]%(.-%)$") then
-        -- OPTIMIZATION: Early image detection (before HTML processing) - skip images
-        -- Treat skipped images as empty content for empty line collapsing
-        if not prev_was_empty then
-          count = count + 1
-          processed[count] = ""
+          result_count = result_count + 1
+          result[result_count] = ""
         end
         prev_was_empty = true
       else
-        -- OPTIMIZATION: Conditional HTML tag processing - check for '<' first (cheaper)
-        if trimmed_line:find("<", 1, true) then
-          if trimmed_line:find("<%s*[^>]*>") then
-            trimmed_line = utils.strip_html_tags(trimmed_line)
+        -- Optimized HTML detection: check for '<' first (cheaper operation)
+        if trimmed:find("<", 1, true) then
+          -- Only run expensive regex if '<' is found
+          if trimmed:match("<%s*[^>]*>") then
+            trimmed = utils.strip_html_tags(trimmed)
+            -- Re-check if empty after HTML removal
+            if trimmed == "" then
+              if not prev_was_empty then
+                result_count = result_count + 1
+                result[result_count] = ""
+              end
+              prev_was_empty = true
+            else
+              result_count = result_count + 1
+              result[result_count] = trimmed
+              prev_was_empty = false
+            end
+          else
+            result_count = result_count + 1
+            result[result_count] = trimmed
+            prev_was_empty = false
           end
-        end
-
-        -- Check if after processing, the line became empty
-        if trimmed_line == "" then
-          -- Treat processed-to-empty lines like empty lines for collapsing
-          if not prev_was_empty then
-            count = count + 1
-            processed[count] = ""
-          end
-          prev_was_empty = true
         else
-          -- Step 3: Add non-empty line to processed output
-          count = count + 1
-          processed[count] = trimmed_line
+          result_count = result_count + 1
+          result[result_count] = trimmed
           prev_was_empty = false
         end
       end
     end
   end
 
-  return processed
+  -- Strip leading empty lines
+  local start_idx = 1
+  while start_idx <= result_count and result[start_idx] == "" do
+    start_idx = start_idx + 1
+  end
+
+  if start_idx > result_count then
+    -- All lines were empty
+    return {}
+  end
+
+  -- Create final result array
+  local final_result = {}
+  for i = start_idx, result_count do
+    final_result[i - start_idx + 1] = result[i]
+  end
+
+  return final_result
 end
 
 return M

@@ -12,13 +12,8 @@ local DEFAULT_CONFIG = {
   keymaps_applier = function(buf_id)
     vim.notify("store.nvim: keymaps for list window not configured", vim.log.levels.WARN)
   end,
-  max_lengths = {
-    pretty_stargazers_count = 8,
-    pretty_forks_count = 8,
-    pretty_open_issues_count = 8,
-    pretty_pushed_at = 27,
-  },
-  list_fields = {},
+  cursor_debounce_delay = 150, -- ms delay for cursor movement debouncing
+  repository_renderer = nil, -- Will be set from store config
 }
 
 local DEFAULT_STATE = {
@@ -38,9 +33,27 @@ local DEFAULT_STATE = {
   -- Operational state
   cursor_autocmd_id = nil,
   cursor_debounce_timer = nil,
+
   -- Performance cache
-  full_name_to_rendering_line_cache = {}, -- full_name => rendered_line map for O(1) access
+  -- map full_name => Repository
+  full_dataset_cache = {}, -- Pre-formatted lines for full dataset
 }
+
+local function is_repo_installed(installed_items, repo)
+  if not installed_items or not repo then
+    return false
+  end
+
+  if installed_items[repo.name] == true then
+    return true
+  end
+
+  if repo.full_name and installed_items[repo.full_name] == true then
+    return true
+  end
+
+  return false
+end
 
 local List = {}
 List.__index = List
@@ -62,7 +75,9 @@ function M.new(list_config)
   local instance = {
     config = config,
     state = vim.tbl_deep_extend("force", DEFAULT_STATE, {
-      buf_id = utils.create_scratch_buffer(),
+      buf_id = utils.create_scratch_buffer({
+        filetype = "markdown", -- Set to markdown for markview rendering
+      }),
     }),
   }
 
@@ -94,7 +109,7 @@ function List:open()
     zindex = plugin_config.zindex.base,
   }
 
-  -- Window options optimized for list display
+  -- Window options optimized for list display with markview
   local window_opts = {
     cursorline = true,
     number = false,
@@ -105,6 +120,8 @@ function List:open()
     wrap = false,
     linebreak = false,
     sidescrolloff = 0,
+    conceallevel = 3, -- Required for markview to hide markdown syntax
+    concealcursor = "nvc", -- Hide concealed text in normal, visual, command modes
   }
 
   local win_id, error_message = utils.create_floating_window({
@@ -118,6 +135,12 @@ function List:open()
 
   self.state.win_id = win_id
   self.state.is_open = true
+
+  -- Initialize markview for table rendering
+  local markview_ok, markview = pcall(require, "markview")
+  if markview_ok and markview.strict_render then
+    markview.strict_render:render(self.state.buf_id)
+  end
 
   -- Setup cursor movement callback if provided
   if self.config.on_repo then
@@ -291,6 +314,9 @@ function List:resize(layout_config)
   self.config.row = layout_config.row
   self.config.col = layout_config.col
 
+  -- Clear cache since window width change may affect column alignment
+  self:_clear_cache()
+
   -- Re-render content if we have items to ensure proper formatting with new width
   if self.state.items and #self.state.items > 0 then
     vim.schedule(function()
@@ -357,197 +383,118 @@ function List:_render_error()
   utils.set_lines(self.state.buf_id, content_lines)
 end
 
----Pad or truncate string based on display width (handles emojis correctly)
+---Calculate column widths for a set of repositories using repository renderer
 ---@private
----@param text string String to process
----@param expected_length number Expected display width
----@return string Fixed-width string
-function List:_pad_or_truncate_display(text, expected_length)
-  if type(text) ~= "string" then
-    text = tostring(text or "")
+---@param items Repository[] List of repositories to analyze
+---@return number[] column_widths Array of maximum widths for each field position
+function List:_calculate_column_widths(items)
+  if not self.config.repository_renderer then
+    return {}
   end
 
-  if expected_length <= 0 then
-    return ""
-  end
+  local column_widths = {}
 
-  local display_width = vim.fn.strdisplaywidth(text)
+  -- Sample render for each repository to determine column widths
+  for _, repo in ipairs(items) do
+    local is_installed = is_repo_installed(self.state.installed_items, repo)
+    local rendered_fields = self.config.repository_renderer(repo, is_installed)
 
-  if display_width == expected_length then
-    return text
-  end
-
-  if display_width < expected_length then
-    local spaces_needed = expected_length - display_width
-    return text .. string.rep(" ", spaces_needed)
-  end
-
-  -- display_width > expected_length, truncate
-  -- This is simplified - proper truncation with display width is complex
-  if expected_length == 1 then
-    return "…"
-  end
-
-  local truncated = vim.fn.strcharpart(text, 0, expected_length - 1)
-  return truncated .. "…"
-end
-
----Format a list of string-length pairs using display width
----@private
----@param pairs table[] List of {string, number} pairs where string is content and number is column width
----@return string Formatted line with space-separated columns of fixed widths
-function List:_format_table_line_display(pairs)
-  if type(pairs) ~= "table" then
-    return ""
-  end
-
-  if #pairs == 0 then
-    return ""
-  end
-
-  local columns = {}
-
-  for i, pair in ipairs(pairs) do
-    if type(pair) ~= "table" or #pair ~= 2 then
-      table.insert(columns, "")
-    else
-      local str, length = pair[1], pair[2]
-      local formatted = self:_pad_or_truncate_display(str, length)
-      table.insert(columns, formatted)
+    for field_index, field_data in ipairs(rendered_fields) do
+      if field_data.content then
+        local actual_width = vim.fn.strdisplaywidth(field_data.content)
+        local max_width = math.min(actual_width, field_data.limit or actual_width)
+        column_widths[field_index] = math.max(column_widths[field_index] or 0, max_width)
+      end
     end
   end
 
-  return table.concat(columns, " ")
+  return column_widths
 end
 
----Calculate formatted display line for a repository
+---Generate aligned line for a repository using repository renderer and column widths
 ---@private
 ---@param repo Repository Repository to format
----@return string formatted_line Complete formatted line with padding and content
-function List:_calculate_display_line(repo)
-  -- Field renderer mapping
-  local field_renderers = {
-    is_installed = function(r)
-      local is_installed = self.state.installed_items[r.name] == true
-      return is_installed and "🏠" or " " -- House or space
-    end,
-    is_installable = function(r)
-      return r.install ~= nil and "📦" or " " -- Package or space
-    end,
-    author = function(r)
-      return r.author
-    end,
-    name = function(r)
-      return r.name
-    end,
-    full_name = function(r)
-      return r.full_name
-    end,
-    description = function(r)
-      return r.description
-    end,
-    stars = function(r)
-      return "⭐" .. r.pretty_stargazers_count
-    end,
-    forks = function(r)
-      return "🍴" .. r.pretty_forks_count
-    end,
-    issues = function(r)
-      return "🐛" .. r.pretty_open_issues_count
-    end,
-    pushed_at = function(r)
-      local pushed_at = r.pretty_pushed_at or "Unknown"
-      return "Last updated " .. pushed_at
-    end,
-  }
-
-  -- Max length mapping (with emoji prefix adjustments)
-  local max_length_map = {
-    is_installed = 2, -- Emoji width (2 characters in most terminals)
-    is_installable = 2, -- Emoji width (2 characters in most terminals)
-    author = self.config.max_lengths.author,
-    name = self.config.max_lengths.name,
-    full_name = self.config.max_lengths.full_name,
-    stars = self.config.max_lengths.pretty_stargazers_count + 2, -- +2 for ⭐
-    forks = self.config.max_lengths.pretty_forks_count + 2, -- +2 for 🍴
-    issues = self.config.max_lengths.pretty_open_issues_count + 2, -- +2 for 🐛
-    pushed_at = self.config.max_lengths.pretty_pushed_at,
-  }
-
-  local columns = {}
-  local append_content = ""
-
-  -- Process fields in configured order
-  for _, field in ipairs(self.config.list_fields) do
-    if field == "tags" then
-      -- Handle tags separately (append after main content)
-      if repo.tags and #repo.tags > 0 then
-        local tag_parts = {}
-        for _, tag in ipairs(repo.tags) do
-          table.insert(tag_parts, tag)
-        end
-        append_content = " " .. table.concat(tag_parts, ", ")
-      end
-    elseif field == "is_installed" or field == "is_installable" then
-      -- Handle is_installed and is_installable fields
-      local renderer = field_renderers[field]
-      if renderer then
-        local content = renderer(repo)
-        local max_length = max_length_map[field] or 1 -- Fallback to 1 character
-        table.insert(columns, { content, max_length })
-      end
-    else
-      -- Handle other table fields
-      local renderer = field_renderers[field]
-      if renderer then
-        local content = renderer(repo)
-        local max_length = max_length_map[field] or 20 -- Fallback length
-        table.insert(columns, { content, max_length })
-      else
-        -- Unknown field, skip with warning
-        logger.warn("Unknown field in list_fields: " .. field)
-      end
-    end
+---@param column_widths number[] Column widths for alignment (indexed by field position)
+---@return string formatted_line Complete line with proper alignment
+function List:_generate_aligned_line(repo, column_widths)
+  if not self.config.repository_renderer then
+    return ""
   end
 
-  return self:_format_table_line_display(columns) .. append_content
+  local is_installed = is_repo_installed(self.state.installed_items, repo)
+  local rendered_fields = self.config.repository_renderer(repo, is_installed)
+  local columns = {}
+
+  for field_index, field_data in ipairs(rendered_fields) do
+    local content = field_data.content or ""
+    local target_width = column_widths[field_index] or 0
+    local current_width = vim.fn.strdisplaywidth(content)
+
+    -- Truncate content if it exceeds target width
+    if current_width > target_width and target_width > 3 then
+      content = string.sub(content, 1, target_width - 3) .. "..."
+      current_width = target_width
+    end
+
+    -- Pad content to target width, but not the last one
+    if field_index < #rendered_fields and current_width < target_width then
+      content = content .. string.rep(" ", target_width - current_width)
+    end
+
+    table.insert(columns, content)
+  end
+
+  return " " .. table.concat(columns, " ")
 end
 
----Clear the display line cache
+---Clear all caches
 ---@private
 function List:_clear_cache()
-  self.state.full_name_to_rendering_line_cache = {}
+  self.state.full_dataset_cache = {}
+  logger.debug("Cleared full dataset cache")
 end
 
 ---Render ready state with repository list
 ---@private
 ---@param state ListState List state containing repository data
 function List:_render_ready(state)
-  -- Create content lines
-  local content_lines = {}
+  local items = state.items
 
-  for i, repo in ipairs(state.items or {}) do
-    -- Check cache first for O(1) access
-    local cached_line = self.state.full_name_to_rendering_line_cache[repo.full_name]
-    if cached_line then
-      table.insert(content_lines, cached_line)
-    else
-      -- Cache miss - calculate and cache the line
-      local formatted_line = self:_calculate_display_line(repo)
-      self.state.full_name_to_rendering_line_cache[repo.full_name] = formatted_line
+  local cache_size = vim.tbl_count(self.state.full_dataset_cache)
+  local can_use_cache = cache_size > 0 and #items == cache_size
+
+  local content_lines = {}
+  if can_use_cache then
+    -- Use cached lines
+    for _, repo in ipairs(items) do
+      local formatted_line = self.state.full_dataset_cache[repo.full_name]
       table.insert(content_lines, formatted_line)
+    end
+  else
+    -- Calculate fresh and cache (first render builds cache, subsequent renders just calculate)
+    local column_widths = self:_calculate_column_widths(items)
+    for _, repo in ipairs(items) do
+      local formatted_line = self:_generate_aligned_line(repo, column_widths)
+      table.insert(content_lines, formatted_line)
+      self.state.full_dataset_cache[repo.full_name] = formatted_line
     end
   end
 
   utils.set_lines(self.state.buf_id, content_lines)
+
+  -- Render with markview for table formatting
+  local markview_ok, markview = pcall(require, "markview")
+  if markview_ok and markview.strict_render then
+    markview.strict_render:render(self.state.buf_id)
+  end
 
   -- Position cursor at first line if window is valid
   if self.state.win_id and vim.api.nvim_win_is_valid(self.state.win_id) and #content_lines > 0 then
     vim.api.nvim_win_set_cursor(self.state.win_id, { 1, 0 })
 
     -- Trigger initial callback only if repository selection has changed
-    if self.config.on_repo and self.state.items[1] then
-      local first_repo = self.state.items[1]
+    if self.config.on_repo and items[1] then
+      local first_repo = items[1]
       local needs_callback = not self.state.current_repository
         or self.state.current_repository.full_name ~= first_repo.full_name
 
@@ -594,7 +541,20 @@ function List:update_config(config_updates)
   -- Apply updates to config
   self.config = vim.tbl_deep_extend("force", self.config, config_updates)
 
+  -- Clear caches since configuration affects rendering
+  self:_clear_cache()
+
   return nil
+end
+
+---Update installed items and invalidate cache
+---@param installed_items table<string, boolean> Map of plugin names to installation status
+function List:update_installed_items(installed_items)
+  if type(installed_items) == "table" then
+    self.state.installed_items = installed_items
+    -- Clear caches since installation status affects emoji display
+    self:_clear_cache()
+  end
 end
 
 return M
