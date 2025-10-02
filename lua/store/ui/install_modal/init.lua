@@ -95,6 +95,7 @@ local function create_content(repository, snippet)
   table.insert(lines, "```text")
   table.insert(lines, display_path)
   table.insert(lines, "```")
+  table.insert(lines, "")
   table.insert(lines, "## Configuration ( ✏️editable ):")
   table.insert(lines, "```lua")
 

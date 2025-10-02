@@ -76,7 +76,7 @@ function M.new(list_config)
     config = config,
     state = vim.tbl_deep_extend("force", DEFAULT_STATE, {
       buf_id = utils.create_scratch_buffer({
-        filetype = "markdown", -- Set to markdown for markview rendering
+        -- filetype = "markdown", -- Set to markdown for markview rendering
       }),
     }),
   }
@@ -120,8 +120,8 @@ function List:open()
     wrap = false,
     linebreak = false,
     sidescrolloff = 0,
-    conceallevel = 3, -- Required for markview to hide markdown syntax
-    concealcursor = "nvc", -- Hide concealed text in normal, visual, command modes
+    -- conceallevel = 3, -- Required for markview to hide markdown syntax
+    -- concealcursor = "nvc", -- Hide concealed text in normal, visual, command modes
   }
 
   local win_id, error_message = utils.create_floating_window({
@@ -135,12 +135,6 @@ function List:open()
 
   self.state.win_id = win_id
   self.state.is_open = true
-
-  -- Initialize markview for table rendering
-  local markview_ok, markview = pcall(require, "markview")
-  if markview_ok and markview.strict_render then
-    markview.strict_render:render(self.state.buf_id)
-  end
 
   -- Setup cursor movement callback if provided
   if self.config.on_repo then
@@ -481,12 +475,6 @@ function List:_render_ready(state)
   end
 
   utils.set_lines(self.state.buf_id, content_lines)
-
-  -- Render with markview for table formatting
-  local markview_ok, markview = pcall(require, "markview")
-  if markview_ok and markview.strict_render then
-    markview.strict_render:render(self.state.buf_id)
-  end
 
   -- Position cursor at first line if window is valid
   if self.state.win_id and vim.api.nvim_win_is_valid(self.state.win_id) and #content_lines > 0 then
