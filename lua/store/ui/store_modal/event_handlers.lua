@@ -44,7 +44,8 @@ function M.on_db(modal, data, err)
     -- Preserve existing installed_count if already set, otherwise default to 0
     installed_count = modal.state.total_installed_count or 0,
     -- Preserve existing plugin_manager_mode if already set
-    plugin_manager_mode = modal.state.plugin_manager_mode or "",
+    plugin_manager_mode = modal.state.plugin_manager_mode or "not-selected",
+    plugin_manager_overview = modal.state.plugin_manager_overview or {},
   })
 
   logger.debug("Plugin data loaded successfully: " .. tostring(total_count) .. " repositories")
@@ -52,39 +53,75 @@ end
 
 ---Handle installed plugins data response from database fetch
 ---@param modal StoreModal The modal instance
----@param installed_data table|nil Installed plugins data
----@param mode string|nil Plugin manager mode ("lazy.nvim" or "vim.pack")
----@param installed_err string|nil Error message if fetch failed
-function M.on_installed_plugins(modal, installed_data, mode, installed_err)
+---@param installed_data table|nil Installed plugins data for the active manager
+---@param mode string|nil Selected plugin manager mode
+---@param installed_err string|nil Error message if detection failed
+---@param overview table|nil Summary of all detected managers
+function M.on_installed_plugins(modal, installed_data, mode, installed_err, overview)
+  local installed_lookup = installed_data or {}
+  local plugin_overview = overview or {}
+  local active_mode = mode or (modal.config.plugin_manager or "not-selected")
+
   if installed_err then
-    vim.notify("[store.nvim] Failed to fetch installed plugins: " .. installed_err .. "\nInstallation is not available")
-    -- Don't fail the entire modal, just continue without installed info
+    if modal.config.plugin_manager and modal.config.plugin_manager ~= "not-selected" then
+      local message = "Preferred plugin manager '"
+        .. modal.config.plugin_manager
+        .. "' is unavailable: "
+        .. installed_err
+      logger.error(message)
+      vim.notify("[store.nvim] " .. message, vim.log.levels.ERROR)
+      if not modal.state.is_closing then
+        modal:close()
+      end
+      return
+    end
+
+    vim.notify("[store.nvim] " .. installed_err .. "\nInstallation is not available", vim.log.levels.ERROR)
+    modal.state.installed_items = {}
+    modal.state.total_installed_count = 0
+    modal.state.plugin_manager_mode = "not-selected"
+    modal.state.plugin_manager_overview = plugin_overview
+    modal.state.install_catalogue = nil
+    modal.state.install_catalogue_manager = nil
+
+    modal.heading:render({
+      state = "ready",
+      installed_count = 0,
+      plugin_manager_mode = "not-selected",
+      plugin_manager_overview = plugin_overview,
+    })
+
+    modal.list:render({
+      installed_items = {},
+    })
     return
   end
 
-  -- Store installed plugins data in modal state
-  modal.state.installed_items = installed_data or {}
-  local installed_count = vim.tbl_count(installed_data or {})
-  modal.state.total_installed_count = installed_count
-  modal.state.plugin_manager_mode = mode or ""
+  modal.state.installed_items = installed_lookup
+  modal.state.total_installed_count = vim.tbl_count(installed_lookup)
+  modal.state.plugin_manager_mode = active_mode
+  modal.state.plugin_manager_overview = plugin_overview
 
-  -- Update heading with counts and plugin manager mode
-  modal.heading:render({ installed_count = installed_count, plugin_manager_mode = mode, state = "ready" })
-
-  -- Update list component with installed plugins data
-  modal.list:render({
-    installed_items = installed_data,
+  modal.heading:render({
+    state = "ready",
+    installed_count = modal.state.total_installed_count,
+    plugin_manager_mode = active_mode,
+    plugin_manager_overview = plugin_overview,
   })
 
-  if mode and mode ~= "" then
-    if modal.state.install_catalogue_manager ~= mode or not modal.state.install_catalogue then
-      modal.state.install_catalogue_manager = mode
+  modal.list:render({
+    installed_items = installed_lookup,
+  })
 
-      database.fetch_install_catalogue(mode, function(catalogue, catalogue_err)
+  if active_mode and active_mode ~= "" and active_mode ~= "not-selected" then
+    if modal.state.install_catalogue_manager ~= active_mode or not modal.state.install_catalogue then
+      modal.state.install_catalogue_manager = active_mode
+
+      database.fetch_install_catalogue(active_mode, function(catalogue, catalogue_err)
         if catalogue_err then
           logger.error(
             "Failed to load install catalogue for "
-              .. mode
+              .. active_mode
               .. ": "
               .. catalogue_err
               .. "\nInstallation is not available"
@@ -94,13 +131,14 @@ function M.on_installed_plugins(modal, installed_data, mode, installed_err)
 
         local items = (catalogue and catalogue.items) or {}
         modal.state.install_catalogue = items
-        logger.debug(string.format("Install catalogue ready for %s with %d entries", mode, vim.tbl_count(items)))
+        logger.debug(string.format("Install catalogue ready for %s with %d entries", active_mode, vim.tbl_count(items)))
       end)
     end
-  else
-    modal.state.install_catalogue = nil
-    modal.state.install_catalogue_manager = nil
+    return
   end
+
+  modal.state.install_catalogue = nil
+  modal.state.install_catalogue_manager = nil
 end
 
 ---@param modal StoreModal

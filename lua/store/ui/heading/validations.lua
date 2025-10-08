@@ -127,6 +127,62 @@ function M.validate_state(state)
     end
   end
 
+  if state.plugin_manager_mode ~= nil then
+    local mode_err =
+      validators.should_be_string(state.plugin_manager_mode, "heading.plugin_manager_mode must be nil or a string")
+    if mode_err then
+      return mode_err
+    end
+  end
+
+  if state.plugin_manager_overview ~= nil then
+    local overview_err =
+      validators.should_be_table(state.plugin_manager_overview, "heading.plugin_manager_overview must be a table")
+    if overview_err then
+      return overview_err
+    end
+
+    for manager, info in pairs(state.plugin_manager_overview) do
+      if type(info) ~= "table" then
+        return "heading.plugin_manager_overview['" .. manager .. "'] must be a table"
+      end
+
+      local count_err = validators.should_be_number(
+        info.count,
+        "heading.plugin_manager_overview['" .. manager .. "'].count must be a number"
+      )
+      if count_err then
+        return count_err
+      end
+      if info.count < 0 then
+        return "heading.plugin_manager_overview['" .. manager .. "'].count must be non-negative"
+      end
+
+      local status_err = validators.should_be_string(
+        info.status,
+        "heading.plugin_manager_overview['" .. manager .. "'].status must be a string"
+      )
+      if status_err then
+        return status_err
+      end
+
+      local valid_statuses = { ready = true, missing = true, error = true }
+      if not valid_statuses[info.status] then
+        return "heading.plugin_manager_overview['" .. manager .. "'].status must be ready, missing, or error"
+      end
+
+      if info.error ~= nil then
+        local error_err = validators.should_be_string(
+          info.error,
+          "heading.plugin_manager_overview['" .. manager .. "'].error must be a string if provided"
+        )
+        if error_err then
+          return error_err
+        end
+      end
+    end
+  end
+
   return nil
 end
 

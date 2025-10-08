@@ -538,90 +538,105 @@ end
 -- Cache for installed plugins (persists for session)
 local installed_plugins_cache = nil
 
----Get list of installed plugins from vim.pack or lazy.nvim (fallback)
----@param callback fun(data: table<string, boolean>|nil, mode: string|nil, error: string|nil) Callback function with plugin lookup table, plugin manager mode, or error
-function M.get_installed_plugins(callback)
-  -- Return cached result if available
-  if installed_plugins_cache then
-    callback(installed_plugins_cache.data, installed_plugins_cache.mode, installed_plugins_cache.error)
-    return
+---@class ManagerPluginSnapshot
+---@field manager string
+---@field plugins table<string, boolean>
+---@field count integer
+---@field status "ready"|"missing"|"error"
+---@field error string|nil
+
+local function collect_vim_pack_plugins(logger)
+  local snapshot = {
+    manager = "vim.pack",
+    plugins = {},
+    count = 0,
+    status = "missing",
+    error = "vim.pack plugin manager not available",
+  }
+
+  if not (vim.pack and type(vim.pack.get) == "function") then
+    logger.debug("vim.pack.get not available")
+    return snapshot
   end
-  local logger = require("store.logger").createLogger({ context = "utils" })
 
-  -- Wrapper to cache result and call original callback
-  local function cache_and_callback(data, mode, error)
-    installed_plugins_cache = { data = data, mode = mode, error = error }
-    callback(data, mode, error)
+  local success, pack_data = pcall(vim.pack.get)
+  if not success then
+    snapshot.status = "error"
+    snapshot.error = "vim.pack.get() failed: " .. tostring(pack_data)
+    logger.debug(snapshot.error)
+    return snapshot
   end
 
-  -- Try vim.pack first if available and has plugins
-  if vim.pack and type(vim.pack.get) == "function" then
-    local success, pack_data = pcall(vim.pack.get)
-    if success and type(pack_data) == "table" and #pack_data > 0 then
-      logger.debug("vim.pack detected with " .. #pack_data .. " plugins")
+  if type(pack_data) ~= "table" then
+    snapshot.status = "error"
+    snapshot.error = "vim.pack.get() returned invalid data"
+    logger.debug(snapshot.error)
+    return snapshot
+  end
 
-      -- Validate that pack_data contains valid plugin objects
-      local valid_data = true
-      for _, plugin_info in ipairs(pack_data) do
-        if type(plugin_info) ~= "table" or not plugin_info.spec or not plugin_info.spec.name then
-          valid_data = false
-          break
-        end
-      end
+  if #pack_data == 0 then
+    snapshot.status = "ready"
+    snapshot.error = nil
+    logger.debug("vim.pack detected with 0 plugins")
+    return snapshot
+  end
 
-      if valid_data then
-        -- Convert vim.pack data to lookup table
-        local plugin_lookup = {}
-        local count = 0
-        for _, plugin_info in ipairs(pack_data) do
-          plugin_lookup[plugin_info.spec.name] = true
-          count = count + 1
-        end
-
-        logger.debug("Using vim.pack plugin manager: found " .. count .. " plugins")
-        cache_and_callback(plugin_lookup, "vim.pack", nil)
-        return
-      else
-        logger.debug("vim.pack data structure invalid, falling back to lazy.nvim")
-      end
-    else
-      if success and type(pack_data) == "table" then
-        logger.debug("vim.pack available but no plugins managed by it, falling back to lazy.nvim")
-      else
-        logger.debug("vim.pack.get() failed or returned invalid data, falling back to lazy.nvim")
-      end
+  local plugin_lookup = {}
+  local count = 0
+  for _, plugin_info in ipairs(pack_data) do
+    if type(plugin_info) ~= "table" or not plugin_info.spec or not plugin_info.spec.name then
+      snapshot.status = "error"
+      snapshot.error = "vim.pack returned plugin entry without spec.name"
+      logger.debug(snapshot.error)
+      return snapshot
     end
+    plugin_lookup[plugin_info.spec.name] = true
+    count = count + 1
   end
 
-  -- Fallback to lazy.nvim
-  logger.debug("Falling back to lazy.nvim plugin manager")
+  snapshot.plugins = plugin_lookup
+  snapshot.count = count
+  snapshot.status = "ready"
+  snapshot.error = nil
+  logger.debug("vim.pack detected with " .. count .. " plugins")
+  return snapshot
+end
+
+local function collect_lazy_plugins(logger)
+  local snapshot = {
+    manager = "lazy.nvim",
+    plugins = {},
+    count = 0,
+    status = "missing",
+    error = nil,
+  }
+
   local config_path = vim.fn.stdpath("config")
   local lazy_lock_path = config_path .. "/lazy-lock.json"
 
-  -- Check if file exists
   if vim.fn.filereadable(lazy_lock_path) == 0 then
-    logger.debug("lazy-lock.json not found at: " .. lazy_lock_path)
-    cache_and_callback({}, "lazy.nvim", nil) -- Return empty table, not an error
-    return
+    snapshot.error = "lazy-lock.json not found at: " .. lazy_lock_path
+    logger.debug(snapshot.error)
+    return snapshot
   end
 
-  -- Read and parse the file
   local success, content = pcall(vim.fn.readfile, lazy_lock_path)
   if not success then
-    cache_and_callback(nil, nil, "Failed to read lazy-lock.json: " .. tostring(content))
-    return
+    snapshot.status = "error"
+    snapshot.error = "Failed to read lazy-lock.json: " .. tostring(content)
+    logger.debug(snapshot.error)
+    return snapshot
   end
 
   local json_content = table.concat(content, "\n")
   local json_success, data = pcall(vim.json.decode, json_content)
   if not json_success then
-    cache_and_callback(nil, nil, "Failed to parse lazy-lock.json: " .. tostring(data))
-    return
+    snapshot.status = "error"
+    snapshot.error = "Failed to parse lazy-lock.json: " .. tostring(data)
+    logger.debug(snapshot.error)
+    return snapshot
   end
 
-  logger.debug("Successfully parsed lazy-lock.json with " .. vim.tbl_count(data) .. " entries")
-
-  -- Convert to lookup table (just set all keys to true)
   local plugin_lookup = {}
   local count = 0
   for plugin_name, _ in pairs(data) do
@@ -629,8 +644,125 @@ function M.get_installed_plugins(callback)
     count = count + 1
   end
 
-  logger.debug("lazy.nvim: found " .. count .. " plugins")
-  cache_and_callback(plugin_lookup, "lazy.nvim", nil)
+  snapshot.plugins = plugin_lookup
+  snapshot.count = count
+  snapshot.status = "ready"
+  snapshot.error = nil
+  logger.debug("lazy.nvim detected with " .. count .. " plugins")
+  return snapshot
+end
+
+local function format_manager_overview(vim_pack_snapshot, lazy_snapshot)
+  return {
+    ["vim.pack"] = {
+      count = vim_pack_snapshot.count,
+      status = vim_pack_snapshot.status,
+      error = vim_pack_snapshot.error,
+    },
+    ["lazy.nvim"] = {
+      count = lazy_snapshot.count,
+      status = lazy_snapshot.status,
+      error = lazy_snapshot.error,
+    },
+  }
+end
+
+local function determine_active_manager(preferred_manager, vim_pack_snapshot, lazy_snapshot)
+  if preferred_manager == "vim.pack" then
+    if vim_pack_snapshot.status == "ready" then
+      return vim_pack_snapshot.plugins, "vim.pack", nil
+    end
+    return {}, "vim.pack", vim_pack_snapshot.error or "vim.pack plugin manager not available"
+  end
+
+  if preferred_manager == "lazy.nvim" then
+    if lazy_snapshot.status == "ready" then
+      return lazy_snapshot.plugins, "lazy.nvim", nil
+    end
+    return {}, "lazy.nvim", lazy_snapshot.error or "lazy.nvim plugin manager not available"
+  end
+
+  local candidates = {
+    vim_pack_snapshot,
+    lazy_snapshot,
+  }
+
+  local best_snapshot = nil
+  for _, snapshot in ipairs(candidates) do
+    if snapshot.status == "ready" then
+      if
+        not best_snapshot
+        or snapshot.count > best_snapshot.count
+        or (snapshot.count == best_snapshot.count and snapshot.manager == "lazy.nvim")
+      then
+        best_snapshot = snapshot
+      end
+    end
+  end
+
+  if best_snapshot then
+    return best_snapshot.plugins, best_snapshot.manager, nil
+  end
+
+  return {}, "not-selected", nil
+end
+
+---Get list of installed plugins from supported plugin managers
+---@param opts table|fun Callback function when called without options
+---@param callback fun(data: table<string, boolean>, mode: string, error: string|nil, overview: table<string, { count: integer, status: string, error: string|nil }>) Callback receiving lookup table, detected mode, optional error, and overview
+function M.get_installed_plugins(opts, callback)
+  if type(opts) == "function" then
+    callback = opts
+    opts = {}
+  end
+
+  if type(callback) ~= "function" then
+    error("get_installed_plugins requires a callback function")
+  end
+
+  opts = opts or {}
+
+  if installed_plugins_cache then
+    callback(
+      installed_plugins_cache.data,
+      installed_plugins_cache.mode,
+      installed_plugins_cache.error,
+      installed_plugins_cache.overview
+    )
+    return
+  end
+
+  local logger = require("store.logger").createLogger({ context = "utils" })
+
+  local preferred_manager = opts.preferred_manager
+  if preferred_manager == nil or preferred_manager == "" then
+    local ok, config_module = pcall(require, "store.config")
+    if ok and config_module and type(config_module.get) == "function" then
+      local ok_get, cfg = pcall(config_module.get)
+      if ok_get and cfg and cfg.plugin_manager then
+        preferred_manager = cfg.plugin_manager
+      end
+    end
+  end
+
+  if not preferred_manager or preferred_manager == "" then
+    preferred_manager = "not-selected"
+  end
+
+  local vim_pack_snapshot = collect_vim_pack_plugins(logger)
+  local lazy_snapshot = collect_lazy_plugins(logger)
+
+  local plugins, mode, detection_error = determine_active_manager(preferred_manager, vim_pack_snapshot, lazy_snapshot)
+  local overview = format_manager_overview(vim_pack_snapshot, lazy_snapshot)
+
+  installed_plugins_cache = {
+    data = plugins,
+    mode = mode,
+    error = detection_error,
+    overview = overview,
+  }
+
+  callback(plugins, mode, detection_error, overview)
 end
 
 return M

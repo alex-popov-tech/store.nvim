@@ -39,6 +39,8 @@ function M.new(config)
       installed_items = {}, -- Lookup table of installed plugin names for O(1) checks
       install_catalogue = nil, -- Cached install catalogue data for detected plugin manager
       install_catalogue_manager = nil, -- Detected plugin manager identifier
+      plugin_manager_mode = config.plugin_manager or "not-selected",
+      plugin_manager_overview = {},
 
       current_focus = nil, -- Track current focused component win_id
       current_repository = nil, -- Track currently selected repository
@@ -117,9 +119,12 @@ function StoreModal:open()
   end)
 
   -- Concurrently fetch installed plugins
-  utils.get_installed_plugins(function(installed_data, mode, installed_err)
-    event_handlers.on_installed_plugins(self, installed_data, mode, installed_err)
-  end)
+  utils.get_installed_plugins(
+    { preferred_manager = self.config.plugin_manager },
+    function(installed_data, mode, installed_err, overview)
+      event_handlers.on_installed_plugins(self, installed_data, mode, installed_err, overview)
+    end
+  )
 end
 
 function StoreModal:close()

@@ -10,7 +10,8 @@
 ---@field filtered_count number Number of plugins after filtering
 ---@field total_count number Total number of plugins
 ---@field installed_count number Number of installed plugins in current view
----@field plugin_manager_mode string|nil Plugin manager mode ("lazy.nvim" or "vim.pack")
+---@field plugin_manager_mode string Plugin manager mode ("lazy.nvim"|"vim.pack"|"not-selected")
+---@field plugin_manager_overview table<string, { count: integer, status: string, error: string|nil }>|nil Aggregate manager summary
 
 ---@class HeadingStateUpdate
 ---@field state string?
@@ -19,7 +20,8 @@
 ---@field filtered_count number?
 ---@field total_count number?
 ---@field installed_count number? Number of installed plugins in current view
----@field plugin_manager_mode string? Plugin manager mode ("lazy.nvim" or "vim.pack")
+---@field plugin_manager_mode string? Plugin manager mode ("lazy.nvim"|"vim.pack"|"not-selected")
+---@field plugin_manager_overview table<string, { count: integer, status: string, error: string|nil }>? Aggregate manager summary
 
 ---@class Heading
 ---@field config HeadingConfig Window configuration

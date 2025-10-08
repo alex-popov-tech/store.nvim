@@ -55,6 +55,7 @@ require("store").setup({
   preview_debounce = 100, -- ms delay for preview updates
   cache_duration = 24 * 60 * 60, -- 24 hours
   data_source_url = "https://gist.githubusercontent.com/alex-popov-tech/dfb6adf1ee0506461d7dc029a28f851d/raw/db_minified.json", -- URL for plugin data
+  plugin_manager = "not-selected", -- Force manager detection ("lazy.nvim" or "vim.pack")
 
   -- Logging
   logging = "off",
@@ -100,6 +101,8 @@ require("store").setup({
   plugins_folder = nil, -- Example: "~/my-nvim-plugins" or "/opt/nvim/plugins"
 })
 ```
+
+Set `plugin_manager = "lazy.nvim"` or `plugin_manager = "vim.pack"` to lock the installation modal to a specific manager. The default `"not-selected"` lets store.nvim probe both managers and pick whichever has data available.
 
 ## API
 

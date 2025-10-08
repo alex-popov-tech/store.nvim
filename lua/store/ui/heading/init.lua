@@ -18,7 +18,8 @@ local DEFAULT_STATE = {
   filtered_count = 0,
   total_count = 0,
   installed_count = 0,
-  plugin_manager_mode = "unknown",
+  plugin_manager_mode = "not-selected",
+  plugin_manager_overview = {},
 }
 
 -- ASCII art for store.nvim
@@ -87,6 +88,7 @@ function M.new(heading_config)
     config = config,
     state = vim.tbl_deep_extend("force", DEFAULT_STATE, {
       buf_id = utils.create_scratch_buffer(),
+      plugin_manager_overview = {},
     }),
   }
 
@@ -171,8 +173,27 @@ function Heading:_render_ready(state)
   local content_lines = {}
   local width = self.config.width
 
-  -- Line 0: ASCII art + plugin manager and installed count
-  local manager_text = string.format("%d plugins managed by %s", state.installed_count, state.plugin_manager_mode)
+  -- Line 0: ASCII art + plugin manager summary
+  local overview = state.plugin_manager_overview or {}
+  local manager_segments = {}
+  local ordered_managers = { "vim.pack", "lazy.nvim" }
+
+  for _, manager in ipairs(ordered_managers) do
+    local info = overview[manager]
+    if info and type(info.count) == "number" and info.count > 0 then
+      table.insert(manager_segments, string.format("%d plugin(s) managed by %s", info.count, manager))
+    end
+  end
+
+  local manager_text
+  if #manager_segments > 0 then
+    manager_text = table.concat(manager_segments, ", ")
+  elseif state.plugin_manager_mode and state.plugin_manager_mode ~= "not-selected" then
+    manager_text = string.format("%d plugins managed by %s", state.installed_count or 0, state.plugin_manager_mode)
+  else
+    manager_text = ""
+  end
+
   table.insert(content_lines, format_line(width, ASCII_ART[1], manager_text))
 
   -- Line 1: ASCII art + showing plugins count

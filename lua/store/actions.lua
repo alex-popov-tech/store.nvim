@@ -261,7 +261,7 @@ function M.install(instance)
   end
 
   local manager = instance.state.plugin_manager_mode
-  if not manager or manager == "" then
+  if not manager or manager == "" or manager == "not-selected" then
     logger.warn("Plugin manager not detected; cannot prepare install snippet")
     vim.notify("store.nvim: Could not determine plugin manager for installation", vim.log.levels.WARN)
     return
@@ -378,9 +378,12 @@ function M.reset(instance)
   end)
 
   -- Concurrently fetch installed plugins
-  plugin_utils.get_installed_plugins(function(installed_data, mode, installed_err)
-    event_handlers.on_installed_plugins(instance, installed_data, mode, installed_err)
-  end)
+  plugin_utils.get_installed_plugins(
+    { preferred_manager = instance.config and instance.config.plugin_manager },
+    function(installed_data, mode, installed_err, overview)
+      event_handlers.on_installed_plugins(instance, installed_data, mode, installed_err, overview)
+    end
+  )
 end
 
 function M.hover(instance)

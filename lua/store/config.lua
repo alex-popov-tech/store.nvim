@@ -15,6 +15,7 @@ local sort = require("store.sort")
 ---@field resize_debounce? number Debounce delay for resize operations (ms, 10-200 range)
 ---@field plugins_folder? string Absolute path to plugins folder (defaults to ~/.config/nvim/lua/plugins)
 ---@field install_catalogue_urls? table<string, string> Mapping of plugin manager identifiers to catalogue URLs
+---@field plugin_manager? string Preferred plugin manager selection ("not-selected"|"lazy.nvim"|"vim.pack")
 
 ---@class UserConfigWithDefaults
 ---@field width number Window width (0.0-1.0 as percentage of screen width)
@@ -29,6 +30,7 @@ local sort = require("store.sort")
 ---@field resize_debounce number Debounce delay for resize operations (ms, 10-200 range)
 ---@field plugins_folder? string Absolute path to plugins folder (defaults to ~/.config/nvim/lua/plugins)
 ---@field install_catalogue_urls table<string, string>
+---@field plugin_manager string Preferred plugin manager selection
 
 ---@class ComponentLayout
 ---@field width number Window width
@@ -186,6 +188,7 @@ local DEFAULT_USER_CONFIG = {
     ["lazy.nvim"] = "https://gist.githubusercontent.com/alex-popov-tech/6629a59e7910aa08b1aa5cdc0519b8b4/raw/lazy.nvim.json",
     ["vim.pack"] = "https://gist.githubusercontent.com/alex-popov-tech/18a46177d6473e12bc2c854e2548f127/raw/vim.pack.json",
   },
+  plugin_manager = "not-selected",
 
   -- Logging
   logging = "warn",
@@ -334,6 +337,23 @@ local function validate_config(config)
       if not url:match("^https?://") then
         return "install_catalogue_urls['" .. manager .. "'] must be a valid HTTP(S) URL"
       end
+    end
+  end
+
+  if config.plugin_manager ~= nil then
+    local err = validators.should_be_string(config.plugin_manager, "plugin_manager must be a string")
+    if err then
+      return err
+    end
+
+    local allowed = {
+      ["not-selected"] = true,
+      ["lazy.nvim"] = true,
+      ["vim.pack"] = true,
+    }
+
+    if not allowed[config.plugin_manager] then
+      return "plugin_manager must be one of: not-selected, lazy.nvim, vim.pack"
     end
   end
 

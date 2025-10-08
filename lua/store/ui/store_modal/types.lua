@@ -10,6 +10,8 @@
 ---@field installed_items table<string, boolean>
 ---@field install_catalogue table<string, string>|nil
 ---@field install_catalogue_manager string|nil
+---@field plugin_manager_mode string
+---@field plugin_manager_overview table<string, { count: integer, status: string, error: string|nil }>
 ---@field current_focus number|nil
 ---@field current_repository Repository|nil
 ---@field is_closing boolean
