@@ -65,9 +65,9 @@ function M.createLogger(options)
       return
     end
 
-    -- Format and send to vim.notify
+    -- Format and send to tryNotify
     local formatted = format_message(level, message)
-    vim.notify(formatted)
+    require("store.utils").tryNotify(formatted)
   end
 
   ---Debug level logging

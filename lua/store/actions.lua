@@ -263,7 +263,7 @@ function M.install(instance)
   local manager = instance.state.plugin_manager_mode
   if not manager or manager == "" or manager == "not-selected" then
     logger.warn("Plugin manager not detected; cannot prepare install snippet")
-    vim.notify("store.nvim: Could not determine plugin manager for installation", vim.log.levels.WARN)
+    plugin_utils.tryNotify("store.nvim: Could not determine plugin manager for installation", vim.log.levels.WARN)
     return
   end
 
@@ -271,7 +271,7 @@ function M.install(instance)
   if not catalogue or type(catalogue) ~= "table" then
     local message = "Install catalogue is not available for " .. manager
     logger.warn(message)
-    vim.notify("store.nvim: " .. message, vim.log.levels.WARN)
+    plugin_utils.tryNotify("store.nvim: " .. message, vim.log.levels.WARN)
     return
   end
 
@@ -279,7 +279,7 @@ function M.install(instance)
   if not snippet then
     local message = "Install snippet not available for " .. repo.full_name .. " (" .. manager .. ")"
     logger.warn(message)
-    vim.notify("store.nvim: " .. message, vim.log.levels.WARN)
+    plugin_utils.tryNotify("store.nvim: " .. message, vim.log.levels.WARN)
     return
   end
 
@@ -310,11 +310,11 @@ function M.install(instance)
         file:close()
 
         logger.info("Plugin appended: " .. repo.full_name .. " to " .. filepath)
-        vim.notify("Plugin '" .. repo.full_name .. "' appended to " .. filename)
+        plugin_utils.tryNotify("Plugin '" .. repo.full_name .. "' appended to " .. filename)
         if manager == "lazy.nvim" then
-          vim.notify("Run :Lazy sync to complete installation")
+          plugin_utils.tryNotify("Run :Lazy sync to complete installation")
         else
-          vim.notify("Restart Neovim or re-source your config to load vim.pack changes")
+          plugin_utils.tryNotify("Restart Neovim or re-source your config to load vim.pack changes")
         end
         return
       end
@@ -337,11 +337,11 @@ function M.install(instance)
       file:close()
 
       logger.info("Plugin installed: " .. repo.full_name .. " at " .. filepath)
-      vim.notify("Plugin '" .. repo.full_name .. "' configuration created at " .. filepath)
+      plugin_utils.tryNotify("Plugin '" .. repo.full_name .. "' configuration created at " .. filepath)
       if manager == "lazy.nvim" then
-        vim.notify("Run :Lazy sync to complete installation")
+        plugin_utils.tryNotify("Run :Lazy sync to complete installation")
       else
-        vim.notify("Restart Neovim or re-source your config to load vim.pack changes")
+        plugin_utils.tryNotify("Restart Neovim or re-source your config to load vim.pack changes")
       end
     end,
     on_cancel = function()

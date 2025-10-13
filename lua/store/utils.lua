@@ -6,6 +6,17 @@ local MIN_MODAL_HEIGHT = 18
 local HEADER_HEIGHT = 6
 local GAP_BETWEEN_WINDOWS = 2
 
+---Try to use vim.notify, fall back to print if it fails
+---@param message string Message to display
+---@param level? number Log level (vim.log.levels.*)
+---@param opts? table Additional options for vim.notify
+function M.tryNotify(message, level, opts)
+  local success, err = pcall(vim.notify, message, level, opts)
+  if not success then
+    print(message)
+  end
+end
+
 ---Get the plugins folder path from config or default
 ---@return string The expanded plugins folder path
 function M.get_plugins_folder()

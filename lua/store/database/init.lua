@@ -3,6 +3,7 @@ local gitlab_client = require("store.database.gitlab_client")
 local cache = require("store.database.cache")
 local logger = require("store.logger").createLogger({ context = "database" })
 local db_utils = require("store.database.utils")
+local utils = require("store.utils")
 local curl = require("store.plenary.curl")
 local config = require("store.config")
 
@@ -91,7 +92,7 @@ function M.fetch_plugins(callback)
   -- EARLY RETURN: No cache - fetch directly
   if cache_type == "none" then
     logger.debug("📭 No cache - fetching from network")
-    vim.notify("[store.nvim] No cache found, fetching database...", vim.log.levels.INFO)
+    utils.tryNotify("[store.nvim] No cache found, fetching database...", vim.log.levels.INFO)
     github_client.fetch_plugins(function(data, error)
       if error then
         callback(nil, error)
@@ -142,7 +143,7 @@ function M.fetch_plugins(callback)
       logger.debug("✅ File cache valid (sizes match) - using cached data")
       callback(cached_data, nil)
     else
-      vim.notify("[store.nvim] Newer database found, updating...", vim.log.levels.INFO)
+      utils.tryNotify("[store.nvim] Newer database found, updating...", vim.log.levels.INFO)
       logger.debug("🔄 File cache stale (sizes differ) - fetching fresh data")
       github_client.fetch_plugins(function(data, error)
         if error then
@@ -166,7 +167,7 @@ local function fetch_install_catalogue_from_network(manager, source, callback)
     end
 
     local items = data and data.items or {}
-    vim.notify("✅ Install catalogue updated for " .. manager .. ": " .. vim.tbl_count(items) .. " entries")
+    utils.tryNotify("✅ Install catalogue updated for " .. manager .. ": " .. vim.tbl_count(items) .. " entries")
 
     local save_error = cache.save_install_catalogue(manager, data)
     if save_error then
