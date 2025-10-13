@@ -7,10 +7,10 @@ local M = {}
 
 local DEFAULT_CONFIG = {
   on_repo = function()
-    vim.notify("store.nvim: on_repo callback not configured", vim.log.levels.WARN)
+    utils.tryNotify("store.nvim: on_repo callback not configured", vim.log.levels.WARN)
   end,
   keymaps_applier = function(buf_id)
-    vim.notify("store.nvim: keymaps for list window not configured", vim.log.levels.WARN)
+    utils.tryNotify("store.nvim: keymaps for list window not configured", vim.log.levels.WARN)
   end,
   cursor_debounce_delay = 150, -- ms delay for cursor movement debouncing
   repository_renderer = nil, -- Will be set from store config

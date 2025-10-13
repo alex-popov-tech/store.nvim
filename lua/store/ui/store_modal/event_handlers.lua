@@ -2,6 +2,7 @@ local config = require("store.config")
 local database = require("store.database")
 local validators = require("store.ui.store_modal.validators")
 local logger = require("store.logger").createLogger({ context = "modal_event_handlers" })
+local utils = require("store.utils")
 
 local M = {}
 
@@ -69,14 +70,14 @@ function M.on_installed_plugins(modal, installed_data, mode, installed_err, over
         .. "' is unavailable: "
         .. installed_err
       logger.error(message)
-      vim.notify("[store.nvim] " .. message, vim.log.levels.ERROR)
+      utils.tryNotify("[store.nvim] " .. message, vim.log.levels.ERROR)
       if not modal.state.is_closing then
         modal:close()
       end
       return
     end
 
-    vim.notify("[store.nvim] " .. installed_err .. "\nInstallation is not available", vim.log.levels.ERROR)
+    utils.tryNotify("[store.nvim] " .. installed_err .. "\nInstallation is not available", vim.log.levels.ERROR)
     modal.state.installed_items = {}
     modal.state.total_installed_count = 0
     modal.state.plugin_manager_mode = "not-selected"
