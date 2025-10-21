@@ -1,5 +1,5 @@
 <img alt="store.nvim heading image" src="https://github.com/user-attachments/assets/f42b94e4-e3b0-44dc-a8b3-ca59f0817d17" />
-<img alt="store.nvim ui" src="https://github.com/user-attachments/assets/07c8b311-3948-4f6c-8364-fa9e6c50440c" />
+<img alt="store.nvim ui" src="https://github.com/user-attachments/assets/fd685ad2-f2ab-4642-bccf-57accd5be13f" />
 
 ## Features
 
