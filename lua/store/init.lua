@@ -7,17 +7,22 @@ local M = {}
 ---@type StoreModal|nil
 local current_modal = nil
 
+local setup_error
 ---Setup the store.nvim plugin with configuration
 ---@param args? UserConfig User configuration to merge with defaults
 M.setup = function(args)
-  local setup_error = config.setup(args)
-  if setup_error then
-    error(setup_error)
+  local err = config.setup(args)
+  if err ~= nil then
+    setup_error = err
   end
 end
 
 ---Open the store modal interface
 M.open = function()
+  if setup_error then
+    vim.notify("Cannot open store modal: " .. setup_error, vim.log.levels.ERROR)
+    return
+  end
   if current_modal then
     logger.info("Store modal is already opened")
     return
@@ -30,7 +35,8 @@ M.open = function()
   })
   local modal_instance, modal_error = StoreModal.new(modal_config)
   if modal_error then
-    error("Failed to create store modal: " .. modal_error)
+    error("Can't open store modal: " .. modal_error)
+    return
   end
   current_modal = modal_instance
   current_modal:open()
