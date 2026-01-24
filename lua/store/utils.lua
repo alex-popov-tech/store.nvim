@@ -622,8 +622,9 @@ local function collect_lazy_plugins(logger)
     error = nil,
   }
 
-  local config_path = vim.fn.stdpath("config")
-  local lazy_lock_path = config_path .. "/lazy-lock.json"
+  local lazy_lock_path = vim.F.npcall(function()
+    return require("lazy.core.config").options.lockfile
+  end) or (vim.fn.stdpath("config") .. "/lazy-lock.json")
 
   if vim.fn.filereadable(lazy_lock_path) == 0 then
     snapshot.error = "lazy-lock.json not found at: " .. lazy_lock_path
