@@ -159,7 +159,7 @@ function Hover:show()
     callback = function()
       vim.defer_fn(function()
         close_hover()
-        vim.api.nvim_del_augroup_by_id(group)
+        pcall(vim.api.nvim_del_augroup_by_id, group)
       end, 10)
     end,
   })
