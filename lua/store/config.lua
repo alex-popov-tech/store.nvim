@@ -16,6 +16,7 @@ local sort = require("store.sort")
 ---@field plugins_folder? string Absolute path to plugins folder (defaults to ~/.config/nvim/lua/plugins)
 ---@field install_catalogue_urls? table<string, string> Mapping of plugin manager identifiers to catalogue URLs
 ---@field plugin_manager? string Preferred plugin manager selection ("not-selected"|"lazy.nvim"|"vim.pack")
+---@field telemetry? boolean Send anonymous usage counts (default: true)
 
 ---@class UserConfigWithDefaults
 ---@field width number Window width (0.0-1.0 as percentage of screen width)
@@ -31,6 +32,7 @@ local sort = require("store.sort")
 ---@field plugins_folder? string Absolute path to plugins folder (defaults to ~/.config/nvim/lua/plugins)
 ---@field install_catalogue_urls table<string, string>
 ---@field plugin_manager string Preferred plugin manager selection
+---@field telemetry boolean Send anonymous usage counts (default: true)
 
 ---@class ComponentLayout
 ---@field width number Window width
@@ -209,6 +211,9 @@ local DEFAULT_USER_CONFIG = {
   -- Plugins location (absolute path or starts with ~)
   -- Defaults to ~/.config/nvim/lua/plugins if not specified
   plugins_folder = nil,
+
+  -- Telemetry (opt-out)
+  telemetry = true,
 }
 
 ---Validate merged configuration against expected structure
@@ -457,6 +462,12 @@ local function validate_config(config)
     local parent_dir = vim.fn.fnamemodify(expanded_path, ":h")
     if vim.fn.isdirectory(parent_dir) == 0 then
       return "plugins_folder parent directory does not exist: " .. parent_dir
+    end
+  end
+
+  if config.telemetry ~= nil then
+    if type(config.telemetry) ~= "boolean" then
+      return "telemetry must be a boolean"
     end
   end
 

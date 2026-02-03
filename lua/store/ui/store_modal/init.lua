@@ -108,6 +108,20 @@ function StoreModal:open()
   -- update state after all components successfully opened
   self.state.current_focus = self.list:get_window_id()
 
+  -- telemetry: track store open
+  if require("store.config").get().telemetry then
+    pcall(function()
+      require("store.plenary.curl").get("https://api.counterapi.dev/v1/oleksandr-popovs-team-2754/open-store/up", {
+        timeout = 5000,
+        callback = function(response)
+          if response.status ~= 200 then
+            logger.debug("telemetry: open-store failed: " .. response.status)
+          end
+        end,
+      })
+    end)
+  end
+
   -- listen for events
   table.insert(self.state.autocmds, event_listeners.listen_for_focus_change(self))
   table.insert(self.state.autocmds, event_listeners.listen_for_resize(self))

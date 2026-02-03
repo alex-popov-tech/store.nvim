@@ -114,6 +114,12 @@ DEFAULT CONFIGURATION            *store.nvim-store.nvim-default-configuration*
       -- Plugin installation folder (absolute path or starts with ~)
       -- Defaults to ~/.config/nvim/lua/plugins if not specified
       plugins_folder = nil, -- Example: "~/my-nvim-plugins" or "/opt/nvim/plugins"
+    
+      -- Telemetry (opt-out, sends anonymous usage counts)
+      telemetry = true, -- Public counters:
+                        --   https://api.counterapi.dev/v1/oleksandr-popovs-team-2754/open-store/
+                        --   https://api.counterapi.dev/v1/oleksandr-popovs-team-2754/view-install/
+                        --   https://api.counterapi.dev/v1/oleksandr-popovs-team-2754/install-plugin/
     })
 <
 
