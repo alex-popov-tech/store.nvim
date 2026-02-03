@@ -1,0 +1,30 @@
+name: stats
+
+on:
+  schedule:
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+
+jobs:
+  stats:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch counter stats
+        run: |
+          set -euo pipefail
+
+          urls=(
+            "https://api.counterapi.dev/v1/oleksandr-popovs-team-2754/open-store/"
+            "https://api.counterapi.dev/v1/oleksandr-popovs-team-2754/view-install/"
+            "https://api.counterapi.dev/v1/oleksandr-popovs-team-2754/install-plugin/"
+          )
+
+          echo "--- $(date '+%Y-%m-%d %H:%M:%S') ---"
+
+          for url in "${urls[@]}"; do
+            response=$(curl -sf "$url")
+            name=$(echo "$response" | jq -r '.name')
+            count=$(echo "$response" | jq -r '.count')
+            updated_at=$(echo "$response" | jq -r '.updated_at')
+            echo "'$name' triggered '$count' times, last update: '$updated_at'"
+          done
