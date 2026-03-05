@@ -2,6 +2,8 @@ local validations = require("store.ui.heading.validations")
 local utils = require("store.utils")
 local logger = require("store.logger").createLogger({ context = "heading" })
 
+local ns_id = vim.api.nvim_create_namespace("store_nvim")
+
 local M = {}
 
 local DEFAULT_HEADING_CONFIG = {}
@@ -200,27 +202,53 @@ function Heading:_render_ready(state)
   local showing_text = string.format("Showing %d plugins", state.filtered_count)
   table.insert(content_lines, format_line(width, ASCII_ART[2], showing_text))
 
-  -- Line 2: ASCII art + filter and sort info
+  -- Line 2: ASCII art + filter + sort combined
   local filter_text = "Filter: " .. (state.filter_query ~= "" and state.filter_query or "none")
-  table.insert(content_lines, format_line(width, ASCII_ART[3], filter_text))
-
-  -- Line 3: ASCII art + empty line
-  local sort_text = ""
+  local sort_label
   if state.sort_type and state.sort_type ~= "default" then
     local sort = require("store.sort")
-    sort_text = sort.sorts[state.sort_type].label
+    sort_label = sort.sorts[state.sort_type].label
   else
-    sort_text = "Default"
+    sort_label = "Default"
   end
-  table.insert(content_lines, format_line(width, ASCII_ART[4], "Sort: " .. sort_text))
+  table.insert(content_lines, format_line(width, ASCII_ART[3], filter_text .. " | Sort: " .. sort_label))
 
-  -- Line 4: ASCII art + empty line
-  table.insert(content_lines, format_line(width, ASCII_ART[5]))
+  -- Line 3: ASCII art + help text
+  table.insert(content_lines, format_line(width, ASCII_ART[4], "`?` for help"))
 
-  -- Line 5: ASCII art + help text
-  table.insert(content_lines, format_line(width, ASCII_ART[6], "`?` for help"))
+  -- Line 4: ASCII art + "Made in"
+  table.insert(content_lines, format_line(width, ASCII_ART[5], "Made in"))
+
+  -- Line 5: ASCII art + "Ukraine"
+  table.insert(content_lines, format_line(width, ASCII_ART[6], "Ukraine"))
 
   utils.set_lines(self.state.buf_id, content_lines)
+
+  -- Apply extmark highlights for the flag
+  vim.schedule(function()
+    if not self.state.buf_id or not vim.api.nvim_buf_is_valid(self.state.buf_id) then
+      return
+    end
+    vim.api.nvim_buf_clear_namespace(self.state.buf_id, ns_id, 0, -1)
+
+    -- Find "Made in" on line 4 (0-indexed)
+    local line4 = content_lines[5] -- 1-indexed
+    if line4 then
+      local col_start = line4:find("Made in")
+      if col_start then
+        vim.api.nvim_buf_add_highlight(self.state.buf_id, ns_id, "StoreUABlue", 4, col_start - 1, col_start - 1 + 7)
+      end
+    end
+
+    -- Find "Ukraine" on line 5 (0-indexed)
+    local line5 = content_lines[6] -- 1-indexed
+    if line5 then
+      local col_start = line5:find("Ukraine")
+      if col_start then
+        vim.api.nvim_buf_add_highlight(self.state.buf_id, ns_id, "StoreUAYellow", 5, col_start - 1, col_start - 1 + 7)
+      end
+    end
+  end)
 end
 
 ---Render updated heading content

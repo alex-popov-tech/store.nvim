@@ -1,6 +1,7 @@
 local store_config = require("store.config")
 local validations = require("store.ui.list.validations")
 local utils = require("store.utils")
+local tabs = require("store.ui.tabs")
 local logger = require("store.logger").createLogger({ context = "list" })
 
 local M = {}
@@ -12,6 +13,10 @@ local DEFAULT_CONFIG = {
   keymaps_applier = function(buf_id)
     utils.tryNotify("store.nvim: keymaps for list window not configured", vim.log.levels.WARN)
   end,
+  keymaps_applier_install = function(buf_id)
+    utils.tryNotify("store.nvim: keymaps for install buffer not configured", vim.log.levels.WARN)
+  end,
+  get_install_context = nil, -- callback to get modal state for install
   cursor_debounce_delay = 150, -- ms delay for cursor movement debouncing
   repository_renderer = nil, -- Will be set from store config
 }
@@ -37,6 +42,12 @@ local DEFAULT_STATE = {
   -- Performance cache
   -- map full_name => Repository
   full_dataset_cache = {}, -- Pre-formatted lines for full dataset
+
+  -- Tab state
+  active_tab = "list",
+  install_buf_id = nil,
+  install_write_autocmd_id = nil,
+  list_cursor_position = nil,
 }
 
 local function is_repo_installed(installed_items, repo)
@@ -76,15 +87,22 @@ function M.new(list_config)
     config = config,
     state = vim.tbl_deep_extend("force", DEFAULT_STATE, {
       buf_id = utils.create_scratch_buffer({
-        -- filetype = "markdown", -- Set to markdown for markview rendering
+        bufhidden = "hide",
+      }),
+      install_buf_id = utils.create_scratch_buffer({
+        modifiable = true,
+        filetype = "lua",
+        buftype = "acwrite",
+        bufhidden = "hide",
       }),
     }),
   }
 
   setmetatable(instance, List)
 
-  -- Apply keymaps to buffer
+  -- Apply keymaps to buffers
   config.keymaps_applier(instance.state.buf_id)
+  config.keymaps_applier_install(instance.state.install_buf_id)
 
   return instance, nil
 end
@@ -107,6 +125,8 @@ function List:open()
     col = self.config.col,
     focusable = true,
     zindex = plugin_config.zindex.base,
+    title = tabs.build_title(tabs.LEFT_TABS, self.state.active_tab or "list"),
+    title_pos = "left",
   }
 
   -- Window options optimized for list display with markview
@@ -141,8 +161,148 @@ function List:open()
     self:_setup_cursor_callbacks()
   end
 
+  -- Setup BufWriteCmd for install buffer
+  self:_setup_install_write()
+
   -- Set default content
   return self:render({ state = "loading" })
+end
+
+---Setup BufWriteCmd autocmd for the install buffer
+---@private
+function List:_setup_install_write()
+  if not self.state.install_buf_id then
+    return
+  end
+
+  self.state.install_write_autocmd_id = vim.api.nvim_create_autocmd("BufWriteCmd", {
+    buffer = self.state.install_buf_id,
+    callback = function()
+      local lines = vim.api.nvim_buf_get_lines(self.state.install_buf_id, 0, -1, false)
+
+      -- Extract filepath from first line comment
+      local filepath
+      local content_start = 1
+      if lines[1] and lines[1]:match("^%-%- Save path: ") then
+        filepath = lines[1]:match("^%-%- Save path: (.+)$")
+        -- Find first non-comment, non-blank line for content
+        for idx = 2, #lines do
+          if not lines[idx]:match("^%-%-") and lines[idx] ~= "" then
+            content_start = idx
+            break
+          end
+        end
+      end
+
+      if not filepath or filepath == "" then
+        utils.tryNotify("store.nvim: No save path found in buffer", vim.log.levels.WARN)
+        return
+      end
+
+      -- Write only the config lines (skip header comments)
+      local config_lines = {}
+      for idx = content_start, #lines do
+        table.insert(config_lines, lines[idx])
+      end
+      local content = table.concat(config_lines, "\n")
+
+      local dir = vim.fn.fnamemodify(filepath, ":h")
+      if vim.fn.isdirectory(dir) == 0 then
+        vim.fn.mkdir(dir, "p")
+      end
+
+      local file = io.open(filepath, "w")
+      if not file then
+        utils.tryNotify("store.nvim: Failed to write " .. filepath, vim.log.levels.ERROR)
+        return
+      end
+      file:write(content)
+      file:close()
+
+      vim.bo[self.state.install_buf_id].modified = false
+      utils.tryNotify("Saved to " .. filepath)
+    end,
+  })
+end
+
+---Switch the active tab (list or install) in the list pane
+---@param tab_id string "list" or "install"
+function List:set_active_tab(tab_id)
+  if not self.state.is_open or not self.state.win_id or not vim.api.nvim_win_is_valid(self.state.win_id) then
+    return
+  end
+
+  -- Save cursor for current tab
+  pcall(function()
+    local cursor = vim.api.nvim_win_get_cursor(self.state.win_id)
+    if self.state.active_tab == "list" then
+      self.state.list_cursor_position = { cursor[1], cursor[2] }
+    end
+  end)
+
+  self.state.active_tab = tab_id
+
+  -- Swap buffer
+  local target_buf = tab_id == "install" and self.state.install_buf_id or self.state.buf_id
+  vim.api.nvim_win_set_buf(self.state.win_id, target_buf)
+
+  -- Update title
+  pcall(vim.api.nvim_win_set_config, self.state.win_id, {
+    title = tabs.build_title(tabs.LEFT_TABS, tab_id),
+    title_pos = "left",
+  })
+
+  -- Update window options per tab
+  if tab_id == "list" then
+    vim.api.nvim_set_option_value("cursorline", true, { win = self.state.win_id })
+    -- Restore list cursor
+    if self.state.list_cursor_position then
+      pcall(vim.api.nvim_win_set_cursor, self.state.win_id, self.state.list_cursor_position)
+    end
+  else
+    vim.api.nvim_set_option_value("cursorline", false, { win = self.state.win_id })
+  end
+end
+
+---Render install snippet into the install buffer
+---@param repo table|nil Repository
+---@param snippet string|nil Install snippet code
+---@param manager string|nil Plugin manager name
+function List:render_install(repo, snippet, manager)
+  if not self.state.install_buf_id or not vim.api.nvim_buf_is_valid(self.state.install_buf_id) then
+    return
+  end
+
+  local lines
+  if not repo then
+    lines = { "-- Select a plugin from the List tab" }
+  elseif not manager or manager == "" or manager == "not-selected" then
+    lines = { "-- No plugin manager detected" }
+  elseif not snippet then
+    lines = { "-- Install snippet not available for " .. repo.full_name }
+  else
+    local plugins_folder = utils.get_plugins_folder()
+    local filepath = plugins_folder .. "/" .. repo.name .. ".lua"
+    lines = {
+      "-- Save path: " .. filepath,
+      "-- Edit the config below, then :w to save.",
+      "-- Change the path above to write elsewhere.",
+      "",
+    }
+    for line in snippet:gmatch("[^\n]+") do
+      table.insert(lines, line)
+    end
+  end
+
+  vim.api.nvim_set_option_value("modifiable", true, { buf = self.state.install_buf_id })
+  vim.api.nvim_buf_set_lines(self.state.install_buf_id, 0, -1, false, lines)
+  vim.bo[self.state.install_buf_id].modified = false
+end
+
+---Get the currently active tab
+---@return string "list" or "install"
+function List:get_active_tab()
+  return self.state.active_tab
 end
 
 ---Setup cursor movement callbacks with debouncing
@@ -295,6 +455,8 @@ function List:resize(layout_config)
     col = layout_config.col,
     width = layout_config.width,
     height = layout_config.height,
+    title = tabs.build_title(tabs.LEFT_TABS, self.state.active_tab or "list"),
+    title_pos = "left",
   }
 
   local success, err = pcall(vim.api.nvim_win_set_config, self.state.win_id, win_config)
@@ -338,8 +500,14 @@ function List:close()
 
   -- Clean up cursor autocmd
   if self.state.cursor_autocmd_id then
-    vim.api.nvim_del_autocmd(self.state.cursor_autocmd_id)
+    pcall(vim.api.nvim_del_autocmd, self.state.cursor_autocmd_id)
     self.state.cursor_autocmd_id = nil
+  end
+
+  -- Clean up install write autocmd
+  if self.state.install_write_autocmd_id then
+    pcall(vim.api.nvim_del_autocmd, self.state.install_write_autocmd_id)
+    self.state.install_write_autocmd_id = nil
   end
 
   -- Cancel debounce timer
@@ -356,7 +524,17 @@ function List:close()
     end
   end
 
-  -- Reset window state (keep buffer and data)
+  -- Clean up install buffer
+  if self.state.install_buf_id and vim.api.nvim_buf_is_valid(self.state.install_buf_id) then
+    pcall(vim.api.nvim_buf_delete, self.state.install_buf_id, { force = true })
+  end
+
+  -- Clean up list buffer
+  if self.state.buf_id and vim.api.nvim_buf_is_valid(self.state.buf_id) then
+    pcall(vim.api.nvim_buf_delete, self.state.buf_id, { force = true })
+  end
+
+  -- Reset window state
   self.state.win_id = nil
   self.state.is_open = false
 

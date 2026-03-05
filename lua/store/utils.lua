@@ -484,6 +484,8 @@ function M.create_floating_window(params)
     border = config.border or "rounded",
     zindex = config.zindex or plugin_config.zindex.popup,
     focusable = config.focusable,
+    title = config.title,
+    title_pos = config.title_pos,
   }
 
   local win_id = vim.api.nvim_open_win(params.buf_id, enter_window, win_config)
@@ -521,11 +523,11 @@ function M.set_lines(buf_id, lines)
   -- Temporarily make modifiable and not readonly to set lines
   vim.api.nvim_set_option_value("modifiable", true, { buf = buf_id })
   vim.api.nvim_set_option_value("readonly", false, { buf = buf_id })
-  vim.api.nvim_buf_set_lines(buf_id, 0, -1, false, lines)
+  pcall(vim.api.nvim_buf_set_lines, buf_id, 0, -1, false, lines)
 
-  -- Restore original states
-  vim.api.nvim_set_option_value("modifiable", was_modifiable, { buf = buf_id })
-  vim.api.nvim_set_option_value("readonly", was_readonly, { buf = buf_id })
+  -- Always restore original states
+  pcall(vim.api.nvim_set_option_value, "modifiable", was_modifiable, { buf = buf_id })
+  pcall(vim.api.nvim_set_option_value, "readonly", was_readonly, { buf = buf_id })
 end
 
 ---Create a debounced version of a function
