@@ -185,10 +185,10 @@ local DEFAULT_USER_CONFIG = {
 
   -- Behavior
   preview_debounce = 50, -- ms delay for preview updates
-  data_source_url = "https://gist.githubusercontent.com/alex-popov-tech/92d1366bfeb168d767153a24be1475b5/raw/db.json", -- URL for plugin data
+  data_source_url = "https://github.com/alex-popov-tech/store.nvim.crawler/releases/latest/download/db_minified.json", -- URL for plugin data
   install_catalogue_urls = {
-    ["lazy.nvim"] = "https://gist.githubusercontent.com/alex-popov-tech/6629a59e7910aa08b1aa5cdc0519b8b4/raw/lazy.nvim.json",
-    ["vim.pack"] = "https://gist.githubusercontent.com/alex-popov-tech/18a46177d6473e12bc2c854e2548f127/raw/vim.pack.json",
+    ["lazy.nvim"] = "https://github.com/alex-popov-tech/store.nvim.crawler/releases/latest/download/lazy_db_minified.json",
+    ["vim.pack"] = "https://github.com/alex-popov-tech/store.nvim.crawler/releases/latest/download/vimpack_db_minified.json",
   },
   plugin_manager = "not-selected",
 
