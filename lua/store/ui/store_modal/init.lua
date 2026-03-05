@@ -58,6 +58,7 @@ function M.new(config)
 
   local preview_instance, preview_error = preview.new(vim.tbl_extend("force", config.layout.preview, {
     keymaps_applier = keymaps.make_keymaps_for_preview(instance),
+    keymaps_applier_docs = keymaps.make_keymaps_for_docs(instance),
   }))
   if preview_error then
     return nil, "Failed to create preview component: " .. preview_error
@@ -68,6 +69,14 @@ function M.new(config)
     cursor_debounce_delay = config.preview_debounce,
     repository_renderer = config.repository_renderer,
     keymaps_applier = keymaps.make_keymaps_for_list(instance),
+    keymaps_applier_install = keymaps.make_keymaps_for_install(instance),
+    get_install_context = function()
+      return {
+        repository = instance.state.current_repository,
+        install_catalogue = instance.state.install_catalogue,
+        plugin_manager_mode = instance.state.plugin_manager_mode,
+      }
+    end,
     on_repo = function(repository)
       event_handlers.on_repo_selected(instance, repository)
     end,

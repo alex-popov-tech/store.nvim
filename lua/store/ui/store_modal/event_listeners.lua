@@ -4,10 +4,13 @@ local utils = require("store.utils")
 
 local M = {}
 
+local augroup = vim.api.nvim_create_augroup("StoreNvim", { clear = true })
+
 ---@param modal StoreModal The modal instance
 ---@return number autocmd_id to be deleted
 function M.listen_for_focus_change(modal)
   return vim.api.nvim_create_autocmd("WinEnter", {
+    group = augroup,
     callback = function()
       event_handlers.on_focus_change(modal)
     end,
@@ -25,6 +28,7 @@ function M.listen_for_resize(modal)
   end, debounce_delay)
 
   return vim.api.nvim_create_autocmd("VimResized", {
+    group = augroup,
     callback = function()
       debounced_resize()
     end,
@@ -40,6 +44,7 @@ function M.listen_for_window_close(modal)
 
   local autocmd_id = 0
   autocmd_id = vim.api.nvim_create_autocmd("WinClosed", {
+    group = augroup,
     desc = "Handle unexpected window close for store.nvim modal",
     callback = function(args)
       -- if closed as intented to, ignore this autocmd and delete it

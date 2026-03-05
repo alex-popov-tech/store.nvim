@@ -7,7 +7,7 @@ local sort = require("store.sort")
 ---@field width? number Window width (0.0-1.0 as percentage of screen width)
 ---@field height? number Window height (0.0-1.0 as percentage of screen height)
 ---@field proportions? {list: number, preview: number} Layout proportions for panes (0.0-1.0)
----@field keybindings? {help: string[], close: string[], filter: string[], reset: string[], open: string[], switch_focus: string[], sort: string[], install: string[], hover: string[]} Key binding configuration
+---@field keybindings? {help: string[], close: string[], filter: string[], reset: string[], open: string[], switch_focus: string[], sort: string[], hover: string[], switch_list: string[], switch_install: string[], switch_readme: string[], switch_docs: string[]} Key binding configuration
 ---@field preview_debounce? number Debounce delay for preview updates (ms)
 ---@field logging? string Logging level: "off"|"error"|"warn"|"info"|"debug" (default: "off")
 ---@field repository_renderer? RepositoryRenderer Function to render repository data for list display
@@ -22,7 +22,7 @@ local sort = require("store.sort")
 ---@field width number Window width (0.0-1.0 as percentage of screen width)
 ---@field height number Window height (0.0-1.0 as percentage of screen height)
 ---@field proportions {list: number, preview: number} Layout proportions for panes (0.0-1.0)
----@field keybindings {help: string[], close: string[], filter: string[], reset: string[], open: string[], switch_focus: string[], sort: string[], install: string[], hover: string[]} Key binding configuration
+---@field keybindings {help: string[], close: string[], filter: string[], reset: string[], open: string[], switch_focus: string[], sort: string[], hover: string[], switch_list: string[], switch_install: string[], switch_readme: string[], switch_docs: string[]} Key binding configuration
 ---@field preview_debounce number Debounce delay for preview updates (ms)
 ---@field data_source_url string URL for fetching plugin data
 ---@field logging string Logging level: "off"|"error"|"warn"|"info"|"debug" (default: "off")
@@ -175,20 +175,23 @@ local DEFAULT_USER_CONFIG = {
     help = { "?" },
     close = { "q", "<esc>", "<c-c>" },
     filter = { "f" },
-    reset = { "r" },
+    reset = { "<leader>r" },
     open = { "<cr>", "o" },
     switch_focus = { "<tab>", "<s-tab>" },
     sort = { "s" },
-    install = { "i" },
     hover = { "K" },
+    switch_list = { "l", "L" },
+    switch_install = { "i", "I" },
+    switch_readme = { "r", "R" },
+    switch_docs = { "d", "D" },
   },
 
   -- Behavior
   preview_debounce = 50, -- ms delay for preview updates
-  data_source_url = "https://gist.githubusercontent.com/alex-popov-tech/92d1366bfeb168d767153a24be1475b5/raw/db.json", -- URL for plugin data
+  data_source_url = "https://github.com/alex-popov-tech/store.nvim.crawler/releases/latest/download/db_minified.json", -- URL for plugin data
   install_catalogue_urls = {
-    ["lazy.nvim"] = "https://gist.githubusercontent.com/alex-popov-tech/6629a59e7910aa08b1aa5cdc0519b8b4/raw/lazy.nvim.json",
-    ["vim.pack"] = "https://gist.githubusercontent.com/alex-popov-tech/18a46177d6473e12bc2c854e2548f127/raw/vim.pack.json",
+    ["lazy.nvim"] = "https://github.com/alex-popov-tech/store.nvim.crawler/releases/latest/download/lazy_db_minified.json",
+    ["vim.pack"] = "https://github.com/alex-popov-tech/store.nvim.crawler/releases/latest/download/vimpack_db_minified.json",
   },
   plugin_manager = "not-selected",
 

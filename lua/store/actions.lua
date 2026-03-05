@@ -252,111 +252,46 @@ function M.sort(instance)
   end
 end
 
-function M.install(instance)
-  logger.debug("Action: install")
+function M.switch_list(instance)
+  logger.debug("Action: switch to list tab")
+  instance.list:set_active_tab("list")
+end
+
+function M.switch_install(instance)
+  logger.debug("Action: switch to install tab")
   local repo = instance.state.current_repository
-  if not repo then
-    logger.warn("No repository selected")
-    return
-  end
+  local snippet = instance.state.install_catalogue and repo and instance.state.install_catalogue[repo.full_name]
+  instance.list:render_install(repo, snippet, instance.state.plugin_manager_mode)
+  instance.list:set_active_tab("install")
+end
 
-  local manager = instance.state.plugin_manager_mode
-  if not manager or manager == "" or manager == "not-selected" then
-    logger.warn("Plugin manager not detected; cannot prepare install snippet")
-    plugin_utils.tryNotify("store.nvim: Could not determine plugin manager for installation", vim.log.levels.WARN)
-    return
-  end
-
-  local catalogue = instance.state.install_catalogue
-  if not catalogue or type(catalogue) ~= "table" then
-    local message = "Install catalogue is not available for " .. manager
-    logger.warn(message)
-    plugin_utils.tryNotify("store.nvim: " .. message, vim.log.levels.WARN)
-    return
-  end
-
-  local snippet = catalogue[repo.full_name]
-  if not snippet then
-    local message = "Install snippet not available for " .. repo.full_name .. " (" .. manager .. ")"
-    logger.warn(message)
-    plugin_utils.tryNotify("store.nvim: " .. message, vim.log.levels.WARN)
-    return
-  end
-
-  -- Phase 1: Show confirmation popup
-  local install_modal = require("store.ui.install_modal")
-  local component, err = install_modal.new({
-    repository = repo,
-    snippet = snippet,
-    on_confirm = function(data)
-      -- Use the edited configuration and filepath from the popup
-      local filepath = vim.fn.expand(data.filepath)
-      local dir = vim.fn.fnamemodify(filepath, ":h")
-      local filename = vim.fn.fnamemodify(filepath, ":t")
-
-      local file_exists = vim.fn.filereadable(filepath) == 1
-
-      -- Handle existing file - append strategy
-      if file_exists then
-        local file = io.open(filepath, "a")
-        if not file then
-          logger.error("Failed to open existing file for append: " .. filepath)
-          return
-        end
-
-        file:write("\n\n-- Plugin: " .. repo.full_name .. "\n")
-        file:write("-- Added by store.nvim on " .. os.date("%Y-%m-%d %H:%M:%S") .. "\n")
-        file:write(data.config)
-        file:close()
-
-        logger.info("Plugin appended: " .. repo.full_name .. " to " .. filepath)
-        plugin_utils.tryNotify("Plugin '" .. repo.full_name .. "' appended to " .. filename)
-        if manager == "lazy.nvim" then
-          plugin_utils.tryNotify("Run :Lazy sync to complete installation")
-        else
-          plugin_utils.tryNotify("Restart Neovim or re-source your config to load vim.pack changes")
-        end
-        return
-      end
-
-      -- Handle new file - create strategy
-      if vim.fn.isdirectory(dir) == 0 then
-        vim.fn.mkdir(dir, "p")
-      end
-
-      local file = io.open(filepath, "w")
-      if not file then
-        logger.error("Failed to create plugin file: " .. filepath)
-        return
-      end
-
-      file:write("-- Plugin: " .. repo.full_name .. "\n")
-      file:write("-- Installed via store.nvim\n")
-      file:write("\n")
-      file:write(data.config)
-      file:close()
-
-      logger.info("Plugin installed: " .. repo.full_name .. " at " .. filepath)
-      plugin_utils.tryNotify("Plugin '" .. repo.full_name .. "' configuration created at " .. filepath)
-      if manager == "lazy.nvim" then
-        plugin_utils.tryNotify("Run :Lazy sync to complete installation")
+function M.switch_readme(instance)
+  logger.debug("Action: switch to readme tab")
+  instance.preview:set_active_tab("readme")
+  local repo = instance.state.current_repository
+  if repo then
+    database.get_readme(repo, function(content, error)
+      if error then
+        instance.preview:render({ state = "error", content = { error } })
       else
-        plugin_utils.tryNotify("Restart Neovim or re-source your config to load vim.pack changes")
+        instance.preview:render({ state = "ready", content = content, readme_id = repo.full_name })
       end
-    end,
-    on_cancel = function()
-      logger.info("Installation cancelled")
-    end,
-  })
-
-  if err then
-    logger.warn("Failed to create confirm install component: " .. err)
-    return
+    end)
   end
+end
 
-  local open_err = component:open()
-  if open_err then
-    logger.warn("Failed to open confirm install popup: " .. open_err)
+function M.switch_docs(instance)
+  logger.debug("Action: switch to docs tab")
+  instance.preview:set_active_tab("docs")
+  local repo = instance.state.current_repository
+  if repo then
+    database.get_docs(repo, function(content, error)
+      if error then
+        instance.preview:render_docs({ state = "error", content = { error } })
+      else
+        instance.preview:render_docs({ state = "ready", content = content, docs_id = repo.full_name })
+      end
+    end)
   end
 end
 

@@ -147,20 +147,33 @@ end
 function M.on_repo_selected(modal, repository)
   modal.state.current_repository = repository
 
-  database.get_readme(repository, function(content, error)
-    if error then
-      local render_error = modal.preview:render({ state = "error", content = { error } })
-      if render_error then
-        logger.error("Failed to render preview error state: " .. render_error)
-      end
-      return
-    end
+  local active_tab = modal.preview:get_active_tab()
 
-    local render_error = modal.preview:render({ state = "ready", content = content, readme_id = repository.full_name })
-    if render_error then
-      logger.error("Failed to render preview ready state: " .. render_error)
-    end
-  end)
+  if active_tab == "docs" then
+    database.get_docs(repository, function(content, error)
+      if error then
+        modal.preview:render_docs({ state = "error", content = { error } })
+      else
+        modal.preview:render_docs({ state = "ready", content = content, docs_id = repository.full_name })
+      end
+    end)
+  else
+    database.get_readme(repository, function(content, error)
+      if error then
+        local render_error = modal.preview:render({ state = "error", content = { error } })
+        if render_error then
+          logger.error("Failed to render preview error state: " .. render_error)
+        end
+        return
+      end
+
+      local render_error =
+        modal.preview:render({ state = "ready", content = content, readme_id = repository.full_name })
+      if render_error then
+        logger.error("Failed to render preview ready state: " .. render_error)
+      end
+    end)
+  end
 end
 
 ---Handle focus change events with validation and early returns
