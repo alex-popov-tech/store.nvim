@@ -5,7 +5,7 @@ M.sorts = {
   most_stars = {
     label = "Most Stars",
     fn = function(a, b, _)
-      return (a.stars or 0) > (b.stars or 0)
+      return (a.stars.curr or 0) > (b.stars.curr or 0)
     end,
   },
   recently_updated = {

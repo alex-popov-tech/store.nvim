@@ -6,7 +6,7 @@
 ---@field url string Repository URL
 ---@field description string Repository description
 ---@field tags string[] Array of topic tags
----@field stars number Number of stars
+---@field stars {curr: number, weekly: number, monthly: number} Star counts
 ---@field issues number Number of open issues
 ---@field created_at string Creation timestamp (ISO format)
 ---@field updated_at string Last update timestamp (ISO format)
