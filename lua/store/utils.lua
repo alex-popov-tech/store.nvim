@@ -3,7 +3,7 @@ local M = {}
 -- Layout constants
 local MIN_MODAL_WIDTH = 85
 local MIN_MODAL_HEIGHT = 18
-local HEADER_HEIGHT = 6
+local HEADER_HEIGHT = 5
 local GAP_BETWEEN_WINDOWS = 2
 
 ---Try to use vim.notify, fall back to print if it fails

@@ -1,4 +1,5 @@
 local validations = require("store.ui.heading.validations")
+local wave = require("store.ui.heading.wave")
 local utils = require("store.utils")
 local logger = require("store.logger").createLogger({ context = "heading" })
 
@@ -27,8 +28,7 @@ local DEFAULT_STATE = {
 -- ASCII art for store.nvim
 local ASCII_ART = {
   "      _                              _",
-  "     | |                            (_)",
-  "  ___| |_ ___  _ __ ___   _ ____   ___ _ __ ___",
+  "  ___| |_ ___  _ __ ___   _ ____   _(_)_ __ ___",
   " / __| __/ _ \\| '__/ _ \\ | '_ \\ \\ / / | '_ ` _ \\",
   " \\__ \\ || (_) | | |  __/_| | | \\ V /| | | | | | |",
   " |___/\\__\\___/|_|  \\___(_)_| |_|\\_/ |_|_| |_| |_|",
@@ -139,7 +139,13 @@ function Heading:open()
   self.state.is_open = true
 
   -- Set default content
-  return self:render(self.state)
+  local render_err = self:render(self.state)
+  if render_err then
+    return render_err
+  end
+
+  self.state.wave_handle = wave.start(self.state.buf_id)
+  return nil
 end
 
 ---Render error state (ASCII art only)
@@ -153,6 +159,10 @@ function Heading:_render_error()
   end
 
   utils.set_lines(self.state.buf_id, content_lines)
+
+  if self.state.wave_handle then
+    wave.refresh_char_map(self.state.wave_handle)
+  end
 end
 
 ---Render loading state (ASCII art only)
@@ -166,6 +176,10 @@ function Heading:_render_loading()
   end
 
   utils.set_lines(self.state.buf_id, content_lines)
+
+  if self.state.wave_handle then
+    wave.refresh_char_map(self.state.wave_handle)
+  end
 end
 
 ---Render ready state (ASCII art with full info)
@@ -213,16 +227,17 @@ function Heading:_render_ready(state)
   end
   table.insert(content_lines, format_line(width, ASCII_ART[3], filter_text .. " | Sort: " .. sort_label))
 
-  -- Line 3: ASCII art + help text
-  table.insert(content_lines, format_line(width, ASCII_ART[4], "`?` for help"))
+  -- Line 3: ASCII art + "Made in"
+  table.insert(content_lines, format_line(width, ASCII_ART[4], "Made in"))
 
-  -- Line 4: ASCII art + "Made in"
-  table.insert(content_lines, format_line(width, ASCII_ART[5], "Made in"))
-
-  -- Line 5: ASCII art + "Ukraine"
-  table.insert(content_lines, format_line(width, ASCII_ART[6], "Ukraine"))
+  -- Line 4: ASCII art + "Ukraine"
+  table.insert(content_lines, format_line(width, ASCII_ART[5], "Ukraine"))
 
   utils.set_lines(self.state.buf_id, content_lines)
+
+  if self.state.wave_handle then
+    wave.refresh_char_map(self.state.wave_handle)
+  end
 
   -- Apply extmark highlights for the flag
   vim.schedule(function()
@@ -231,21 +246,21 @@ function Heading:_render_ready(state)
     end
     vim.api.nvim_buf_clear_namespace(self.state.buf_id, ns_id, 0, -1)
 
-    -- Find "Made in" on line 4 (0-indexed)
-    local line4 = content_lines[5] -- 1-indexed
-    if line4 then
-      local col_start = line4:find("Made in")
+    -- Find "Made in" on line 3 (0-indexed)
+    local line3 = content_lines[4] -- 1-indexed
+    if line3 then
+      local col_start = line3:find("Made in")
       if col_start then
-        vim.api.nvim_buf_add_highlight(self.state.buf_id, ns_id, "StoreUABlue", 4, col_start - 1, col_start - 1 + 7)
+        vim.api.nvim_buf_add_highlight(self.state.buf_id, ns_id, "StoreUABlue", 3, col_start - 1, col_start - 1 + 7)
       end
     end
 
-    -- Find "Ukraine" on line 5 (0-indexed)
-    local line5 = content_lines[6] -- 1-indexed
-    if line5 then
-      local col_start = line5:find("Ukraine")
+    -- Find "Ukraine" on line 4 (0-indexed)
+    local line4 = content_lines[5] -- 1-indexed
+    if line4 then
+      local col_start = line4:find("Ukraine")
       if col_start then
-        vim.api.nvim_buf_add_highlight(self.state.buf_id, ns_id, "StoreUAYellow", 5, col_start - 1, col_start - 1 + 7)
+        vim.api.nvim_buf_add_highlight(self.state.buf_id, ns_id, "StoreUAYellow", 4, col_start - 1, col_start - 1 + 7)
       end
     end
   end)
@@ -295,6 +310,12 @@ function Heading:close()
   if not self.state.is_open then
     logger.warn("Heading window: close() called when window is not open")
     return nil
+  end
+
+  -- Stop wave animation
+  if self.state.wave_handle then
+    wave.stop(self.state.wave_handle)
+    self.state.wave_handle = nil
   end
 
   -- Close window
