@@ -51,7 +51,7 @@ local function format_repository_info(repo)
   table.insert(
     lines,
     "⭐"
-      .. repo.stars
+      .. repo.stars.curr
       .. " 🚨"
       .. repo.issues
       .. " 📅 updated "
