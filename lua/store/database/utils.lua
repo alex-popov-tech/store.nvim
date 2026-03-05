@@ -19,6 +19,13 @@ function M.repository_to_readme_key(full_name)
   return full_name:gsub("/", "-") .. ".md"
 end
 
+---Generate doc cache key/filename from repository full_name
+---@param full_name string Repository full_name (e.g., "owner/repo")
+---@return string key The cache key/filename for the doc
+function M.repository_to_doc_key(full_name)
+  return full_name:gsub("/", "-") .. ".txt"
+end
+
 ---Resolve README branch/path reference into components
 ---@param readme string|nil README reference in form "branch/path"
 ---@return string branch
@@ -50,6 +57,24 @@ end
 ---@return string url Fully qualified raw README URL
 function M.build_gitlab_readme_url(full_name, readme)
   local branch, path = M.parse_readme_reference(readme)
+  return string.format("https://gitlab.com/%s/-/raw/%s/%s?ref_type=heads", full_name, branch, path)
+end
+
+---Build GitHub raw URL for doc file based on repository metadata
+---@param full_name string Repository full name
+---@param doc string|nil Doc reference (branch/path)
+---@return string url Fully qualified raw doc URL
+function M.build_github_doc_url(full_name, doc)
+  local branch, path = M.parse_readme_reference(doc)
+  return string.format("https://raw.githubusercontent.com/%s/%s/%s", full_name, branch, path)
+end
+
+---Build GitLab raw URL for doc file based on repository metadata
+---@param full_name string Repository full name
+---@param doc string|nil Doc reference (branch/path)
+---@return string url Fully qualified raw doc URL
+function M.build_gitlab_doc_url(full_name, doc)
+  local branch, path = M.parse_readme_reference(doc)
   return string.format("https://gitlab.com/%s/-/raw/%s/%s?ref_type=heads", full_name, branch, path)
 end
 

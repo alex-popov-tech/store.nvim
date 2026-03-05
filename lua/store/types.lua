@@ -12,6 +12,7 @@
 ---@field updated_at string Last update timestamp (ISO format)
 ---@field pretty {stars: string, issues: string, created_at: string, updated_at: string} Formatted display values
 ---@field readme? string README reference in the form "branch/path"
+---@field doc? string Documentation reference in the form "branch/path"
 
 ---@class Meta
 ---@field created_at number Unix timestamp of database creation

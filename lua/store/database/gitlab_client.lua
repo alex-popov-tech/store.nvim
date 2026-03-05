@@ -38,4 +38,31 @@ function M.get_readme(repo, callback)
   })
 end
 
+---Get doc content for a GitLab repository
+---@param repo Repository Repository object with GitLab source
+---@param callback fun(data: string[]|nil, error: string|nil) Callback function with doc lines or error
+function M.get_doc(repo, callback)
+  local plugin_url = db_utils.build_gitlab_doc_url(repo.full_name, repo.doc)
+  logger.debug("Fetching doc: " .. repo.full_name)
+
+  curl.get(plugin_url, {
+    timeout = 10000,
+    callback = function(response)
+      local success = response.status >= 200 and response.status < 300
+      if not success then
+        local errorBody = response.body or "Failed to fetch doc from GitLab"
+        local error = response.status .. " " .. errorBody
+        callback(nil, error)
+        return
+      end
+
+      local lines = vim.split(response.body, "\n", { plain = true })
+
+      logger.debug("📥 DOC FETCHED: " .. repo.full_name .. " (" .. #lines .. " lines)")
+
+      callback(lines, nil)
+    end,
+  })
+end
+
 return M

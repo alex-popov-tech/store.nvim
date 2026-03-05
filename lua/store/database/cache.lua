@@ -16,6 +16,9 @@ local db_memory_cache = nil
 ---@type table<string, string[]> -- maps plugin full_name to README content lines
 local readmes_memory_cache = {}
 
+---@type table<string, string[]> -- maps plugin full_name to doc content lines
+local docs_memory_cache = {}
+
 ---@type table<string, table|nil>
 local install_catalogue_memory_cache = {}
 
@@ -60,6 +63,52 @@ function M.save_readme(full_name, content)
     end
 
     logger.debug("💾 README SAVED: " .. full_name .. " (" .. #processed_content .. " bytes)")
+  end)
+
+  return nil -- Success
+end
+
+---Save doc content to cache
+---@param full_name string The repository full_name (e.g., "owner/repo")
+---@param content string[] The doc content lines
+---@return string|nil error Error message if save failed, nil on success
+function M.save_doc(full_name, content)
+  local err = validators.should_be_string(full_name, "full_name must be a string")
+  if err then
+    return err
+  end
+  err = validators.should_be_table(content, "content must be a table of string")
+  if err then
+    return err
+  end
+
+  -- Update memory cache
+  docs_memory_cache[full_name] = content
+
+  -- Update file cache
+  local cache_dir = db_utils.get_cache_dir()
+  local doc_key = db_utils.repository_to_doc_key(full_name)
+  local doc_file = cache_dir / doc_key
+
+  -- Ensure cache directory exists
+  if not cache_dir:exists() then
+    cache_dir:mkdir({ parents = true })
+  end
+
+  -- Write doc content
+  local processed_content = table.concat(content, "\n")
+
+  vim.schedule(function()
+    local success, err = pcall(function()
+      doc_file:write(processed_content, "w")
+    end)
+
+    if not success then
+      logger.error("Failed to save doc cache for " .. full_name .. ": " .. tostring(err))
+      return
+    end
+
+    logger.debug("💾 DOC SAVED: " .. full_name .. " (" .. #processed_content .. " bytes)")
   end)
 
   return nil -- Success
@@ -177,6 +226,49 @@ function M.get_readme(full_name)
   return "file", file_content
 end
 
+---Get cached doc content with cache type
+---@param full_name string The repository full_name (e.g., "owner/repo")
+---@return "memory"|"file"|"none" cache_type Type of cache found
+---@return string[]|nil content The doc content as array of lines, nil if not cached
+function M.get_doc(full_name)
+  if not full_name then
+    return "none", nil
+  end
+
+  -- Check memory cache first
+  local memory_content = docs_memory_cache[full_name]
+  if memory_content then
+    logger.debug("📦 DOC Memory cache hit: " .. full_name)
+    return "memory", memory_content
+  end
+
+  -- Check file cache second
+  local cache_dir = db_utils.get_cache_dir()
+  local doc_key = db_utils.repository_to_doc_key(full_name)
+  local doc_file = cache_dir / doc_key
+
+  -- Check if file exists
+  if not doc_file:exists() then
+    logger.debug("❌ DOC Cache miss: " .. full_name)
+    return "none", nil
+  end
+
+  -- Read content from file
+  local success, file_content = pcall(function()
+    local raw_content = doc_file:read()
+    return vim.split(raw_content, "\n", { plain = true })
+  end)
+
+  if not success then
+    return "none", nil
+  end
+
+  -- Update memory cache with file content
+  docs_memory_cache[full_name] = file_content
+  logger.debug("📁 DOC File cache hit: " .. full_name)
+  return "file", file_content
+end
+
 ---Get cached database with cache type
 ---@return "memory"|"file"|"none" cache_type Type of cache found
 ---@return Database|nil data The database, nil if not cached
@@ -258,6 +350,7 @@ end
 ---Clear all in-memory caches
 function M.clear_memory_cache()
   readmes_memory_cache = {}
+  docs_memory_cache = {}
   db_memory_cache = nil
   install_catalogue_memory_cache = {}
 end

@@ -300,6 +300,68 @@ function M._fetch_readme_from_network(repo, callback)
   end)
 end
 
+---Get documentation content for a repository, with caching support
+---@param repo Repository
+---@param callback fun(data: string[]|nil, error: string|nil) Callback function with docs lines or error
+function M.get_docs(repo, callback)
+  logger.debug("get_docs called for " .. repo.full_name)
+
+  if not repo.doc or repo.doc == "" then
+    callback(nil, "No documentation available for " .. repo.full_name)
+    return
+  end
+
+  local cache_type, cached_doc = cache.get_doc(repo.full_name)
+
+  -- EARLY RETURN: Memory cache - use immediately
+  if cache_type == "memory" then
+    logger.debug("📦 DOC Memory cache - using immediately for " .. repo.full_name)
+    callback(cached_doc, nil)
+    return
+  end
+
+  -- EARLY RETURN: No cache - fetch directly
+  if cache_type == "none" then
+    logger.debug("📭 No DOC cache - fetching from network for " .. repo.full_name)
+    return M._fetch_doc_from_network(repo, callback)
+  end
+
+  -- FILE CACHE: Use cached doc directly
+  logger.debug("✅ DOC File cache hit - using cached data for " .. repo.full_name)
+  callback(cached_doc, nil)
+end
+
+---Internal helper to fetch doc from network and update cache
+---@param repo Repository Repository object
+---@param callback fun(data: string[]|nil, error: string|nil) Callback function
+function M._fetch_doc_from_network(repo, callback)
+  logger.debug("📥 Fetching doc from network for " .. repo.full_name)
+
+  -- Choose the appropriate client based on the repository source
+  local client
+  if repo.source == "gitlab" then
+    client = gitlab_client
+  else
+    client = github_client
+  end
+
+  client.get_doc(repo, function(data, error)
+    if error then
+      callback(nil, error)
+      return
+    end
+
+    logger.debug("✅ DOC Downloaded: " .. repo.full_name .. " (" .. #data .. " lines)")
+
+    -- Save to cache for future requests
+    local save_error = cache.save_doc(repo.full_name, data)
+    if save_error then
+      logger.warn("Failed to save doc to cache for " .. repo.full_name .. ": " .. save_error)
+    end
+    callback(data, nil)
+  end)
+end
+
 ---Reset all plugin caches and log the time taken
 ---@return string|nil error Error message if reset failed, nil on success
 function M.clear()
