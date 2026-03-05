@@ -1,5 +1,6 @@
 local validations = require("store.ui.preview.validations")
 local utils = require("store.utils")
+local tabs = require("store.ui.tabs")
 local logger = require("store.logger").createLogger({ context = "preview" })
 
 local M = {}
@@ -7,6 +8,9 @@ local M = {}
 local DEFAULT_PREVIEW_CONFIG = {
   keymaps_applier = function(buf_id)
     logger.warn("store.nvim: keymaps for preview window not configured")
+  end,
+  keymaps_applier_docs = function(buf_id)
+    logger.warn("store.nvim: keymaps for docs buffer not configured")
   end,
 }
 
@@ -21,6 +25,11 @@ local DEFAULT_STATE = {
   -- Cursor state
   cursor_positions = {},
   current_readme_id = nil,
+  -- Tab state
+  active_tab = "readme",
+  docs_buf_id = nil,
+  docs_cursor_positions = {},
+  current_docs_id = nil,
 }
 
 -- Preview class
@@ -47,14 +56,20 @@ function M.new(preview_config)
       buf_id = utils.create_scratch_buffer({
         filetype = "markdown", -- Set to markdown for proper markview rendering
         buftype = "", -- Keep as nofile for scratch buffer behavior
+        bufhidden = "hide",
+      }),
+      docs_buf_id = utils.create_scratch_buffer({
+        filetype = "help",
+        bufhidden = "hide",
       }),
     }),
   }
 
   setmetatable(instance, Preview)
 
-  -- Apply keymaps to buffer
+  -- Apply keymaps to buffers
   config.keymaps_applier(instance.state.buf_id)
+  config.keymaps_applier_docs(instance.state.docs_buf_id)
 
   return instance, nil
 end
@@ -77,6 +92,8 @@ function Preview:open()
     col = self.config.col,
     focusable = true,
     zindex = plugin_config.zindex.base,
+    title = tabs.build_title(tabs.RIGHT_TABS, self.state.active_tab or "readme"),
+    title_pos = "left",
   }
 
   local window_opts = {
@@ -189,6 +206,98 @@ function Preview:save_cursor_on_blur()
   self:_save_cursor_position()
 end
 
+---Switch the active tab (readme or docs) in the preview pane
+---@param tab_id string "readme" or "docs"
+function Preview:set_active_tab(tab_id)
+  if not self.state.is_open or not self.state.win_id or not vim.api.nvim_win_is_valid(self.state.win_id) then
+    return
+  end
+
+  -- Save cursor for current tab
+  if self.state.active_tab == "readme" then
+    self:_save_cursor_position()
+  elseif self.state.active_tab == "docs" and self.state.current_docs_id then
+    pcall(function()
+      local cursor = vim.api.nvim_win_get_cursor(self.state.win_id)
+      self.state.docs_cursor_positions[self.state.current_docs_id] = { cursor[1], cursor[2] }
+    end)
+  end
+
+  self.state.active_tab = tab_id
+
+  -- Swap buffer
+  local target_buf = tab_id == "docs" and self.state.docs_buf_id or self.state.buf_id
+  vim.api.nvim_win_set_buf(self.state.win_id, target_buf)
+
+  -- Update title
+  pcall(vim.api.nvim_win_set_config, self.state.win_id, {
+    title = tabs.build_title(tabs.RIGHT_TABS, tab_id),
+    title_pos = "left",
+  })
+
+  -- Update window options per tab
+  if tab_id == "readme" then
+    vim.api.nvim_set_option_value("conceallevel", 3, { win = self.state.win_id })
+    vim.api.nvim_set_option_value("concealcursor", "nvc", { win = self.state.win_id })
+    -- Restore cursor for readme
+    if self.state.current_readme_id then
+      self:_restore_cursor_position(self.state.current_readme_id)
+    end
+  else
+    vim.api.nvim_set_option_value("conceallevel", 0, { win = self.state.win_id })
+    vim.api.nvim_set_option_value("concealcursor", "", { win = self.state.win_id })
+    -- Restore cursor for docs
+    if self.state.current_docs_id then
+      local saved = self.state.docs_cursor_positions[self.state.current_docs_id]
+      if saved then
+        local line_count = vim.api.nvim_buf_line_count(self.state.docs_buf_id)
+        pcall(vim.api.nvim_win_set_cursor, self.state.win_id, { math.min(saved[1], line_count), saved[2] })
+      else
+        pcall(vim.api.nvim_win_set_cursor, self.state.win_id, { 1, 0 })
+      end
+    end
+  end
+end
+
+---Render docs content into the docs buffer
+---@param state table {state: string, content: string[]|nil, docs_id: string|nil}
+function Preview:render_docs(state)
+  vim.schedule(function()
+    if not self.state.docs_buf_id or not vim.api.nvim_buf_is_valid(self.state.docs_buf_id) then
+      return
+    end
+    if state.state == "error" then
+      local lines = state.content or { "Error loading documentation" }
+      utils.set_lines(self.state.docs_buf_id, lines)
+    elseif state.state == "ready" then
+      local lines = state.content or { "No documentation available" }
+      utils.set_lines(self.state.docs_buf_id, lines)
+    else
+      utils.set_lines(self.state.docs_buf_id, { "Loading documentation..." })
+    end
+
+    if state.docs_id then
+      self.state.current_docs_id = state.docs_id
+      -- Restore cursor for docs
+      if self.state.win_id and vim.api.nvim_win_is_valid(self.state.win_id) and self.state.active_tab == "docs" then
+        local saved = self.state.docs_cursor_positions[state.docs_id]
+        if saved then
+          local line_count = vim.api.nvim_buf_line_count(self.state.docs_buf_id)
+          pcall(vim.api.nvim_win_set_cursor, self.state.win_id, { math.min(saved[1], line_count), saved[2] })
+        else
+          pcall(vim.api.nvim_win_set_cursor, self.state.win_id, { 1, 0 })
+        end
+      end
+    end
+  end)
+end
+
+---Get the currently active tab
+---@return string "readme" or "docs"
+function Preview:get_active_tab()
+  return self.state.active_tab
+end
+
 ---Resize the preview window and preserve scroll state
 ---@param layout_config {width: number, height: number, row: number, col: number} New layout configuration
 ---@return string|nil error Error message if resize failed, nil if successful
@@ -223,6 +332,8 @@ function Preview:resize(layout_config)
     col = layout_config.col,
     width = layout_config.width,
     height = layout_config.height,
+    title = tabs.build_title(tabs.RIGHT_TABS, self.state.active_tab or "readme"),
+    title_pos = "left",
   }
 
   local success, err = pcall(vim.api.nvim_win_set_config, self.state.win_id, win_config)
@@ -279,7 +390,17 @@ function Preview:close()
     end
   end
 
-  -- Reset window state (keep buffer)
+  -- Clean up docs buffer
+  if self.state.docs_buf_id and vim.api.nvim_buf_is_valid(self.state.docs_buf_id) then
+    pcall(vim.api.nvim_buf_delete, self.state.docs_buf_id, { force = true })
+  end
+
+  -- Clean up readme buffer
+  if self.state.buf_id and vim.api.nvim_buf_is_valid(self.state.buf_id) then
+    pcall(vim.api.nvim_buf_delete, self.state.buf_id, { force = true })
+  end
+
+  -- Reset window state
   self.state.win_id = nil
   self.state.is_open = false
 
