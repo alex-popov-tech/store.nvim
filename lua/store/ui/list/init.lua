@@ -283,6 +283,8 @@ function List:render_install(repo, snippet, manager)
   else
     local plugins_folder = utils.get_plugins_folder()
     local filepath = plugins_folder .. "/" .. repo.name .. ".lua"
+    -- Buffer needs a name for BufWriteCmd to fire on :w
+    vim.api.nvim_buf_set_name(self.state.install_buf_id, filepath)
     lines = {
       "-- Save path: " .. filepath,
       "-- Edit the config below, then :w to save.",
