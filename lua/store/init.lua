@@ -1,7 +1,6 @@
 local config = require("store.config")
 local highlights = require("store.ui.highlights")
 local logger = require("store.logger").createLogger({ context = "init" })
-local StoreModal = require("store.ui.store_modal")
 
 local M = {}
 
@@ -16,7 +15,6 @@ M.setup = function(args)
   if err ~= nil then
     setup_error = err
   end
-  highlights.setup()
 end
 
 ---Open the store modal interface
@@ -30,6 +28,9 @@ M.open = function()
     return
   end
 
+  highlights.setup()
+
+  local StoreModal = require("store.ui.store_modal")
   local modal_config = vim.tbl_deep_extend("force", config.get(), {
     on_close = function()
       current_modal = nil
