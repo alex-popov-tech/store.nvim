@@ -151,22 +151,7 @@ local function setup_keymaps(buf_id, instance)
       end
 
       instance:close()
-      -- telemetry: track install plugin
-      if require("store.config").get().telemetry then
-        pcall(function()
-          require("store.plenary.curl").get(
-            "https://api.counterapi.dev/v1/oleksandr-popovs-team-2754/install-plugin/up",
-            {
-              timeout = 5000,
-              callback = function(response)
-                if response.status ~= 200 then
-                  logger.debug("telemetry: install-plugin failed: " .. response.status)
-                end
-              end,
-            }
-          )
-        end)
-      end
+      require("store.telemetry").track("install", instance.config.repository.full_name)
       instance.config.on_confirm(extracted_data)
     end,
     ["<esc>"] = function()
@@ -310,20 +295,6 @@ function M:open()
   end
 
   self.win_id = win_id
-
-  -- telemetry: track view install
-  if require("store.config").get().telemetry then
-    pcall(function()
-      require("store.plenary.curl").get("https://api.counterapi.dev/v1/oleksandr-popovs-team-2754/view-install/up", {
-        timeout = 5000,
-        callback = function(response)
-          if response.status ~= 200 then
-            logger.debug("telemetry: view-install failed: " .. response.status)
-          end
-        end,
-      })
-    end)
-  end
 
   -- Render markdown using markview's strict renderer for consistency with list/preview
   local markview_ok, markview = pcall(require, "markview")

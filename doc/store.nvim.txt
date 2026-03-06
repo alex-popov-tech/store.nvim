@@ -116,10 +116,10 @@ DEFAULT CONFIGURATION            *store.nvim-store.nvim-default-configuration*
       plugins_folder = nil, -- Example: "~/my-nvim-plugins" or "/opt/nvim/plugins"
     
       -- Telemetry (opt-out, sends anonymous usage counts)
-      telemetry = true, -- Public counters:
-                        --   https://api.counterapi.dev/v1/oleksandr-popovs-team-2754/open-store/
-                        --   https://api.counterapi.dev/v1/oleksandr-popovs-team-2754/view-install/
-                        --   https://api.counterapi.dev/v1/oleksandr-popovs-team-2754/install-plugin/
+      telemetry = true, -- Tracks: plugin views and installs
+                        -- Privacy: IP hashed with daily rotating salt, no PII stored
+                        -- Public stats: GET https://store-nvim-telemetry.alex-popov-tech.workers.dev/stats
+                        -- Source: https://github.com/alex-popov-tech/store.nvim.telemetry
     })
 <
 

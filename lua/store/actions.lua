@@ -266,6 +266,7 @@ function M.switch_readme(instance)
   instance.state.current_focus = instance.preview:get_window_id()
   local repo = instance.state.current_repository
   if repo then
+    require("store.telemetry").track("view", repo.full_name)
     database.get_readme(repo, function(content, error)
       if error then
         instance.preview:render({ state = "error", content = { error } })
@@ -283,6 +284,7 @@ function M.switch_docs(instance)
   instance.state.current_focus = instance.preview:get_window_id()
   local repo = instance.state.current_repository
   if repo then
+    require("store.telemetry").track("view", repo.full_name)
     database.get_docs(repo, function(content, error)
       if error then
         instance.preview:render_docs({ state = "error", content = { error } })

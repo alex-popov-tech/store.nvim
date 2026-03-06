@@ -214,7 +214,7 @@ local DEFAULT_USER_CONFIG = {
   -- Defaults to ~/.config/nvim/lua/plugins if not specified
   plugins_folder = nil,
 
-  -- Telemetry (opt-out)
+  -- Telemetry (opt-out) — tracks plugin views and installs via store.nvim.telemetry service
   telemetry = true,
 }
 
