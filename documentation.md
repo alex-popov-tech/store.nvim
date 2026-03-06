@@ -99,6 +99,12 @@ require("store").setup({
   -- Plugin installation folder (absolute path or starts with ~)
   -- Defaults to ~/.config/nvim/lua/plugins if not specified
   plugins_folder = nil, -- Example: "~/my-nvim-plugins" or "/opt/nvim/plugins"
+
+  -- Telemetry (opt-out, sends anonymous usage counts)
+  telemetry = true, -- Tracks: plugin views and installs
+                    -- Privacy: IP hashed with daily rotating salt, no PII stored
+                    -- Public stats: GET https://store-nvim-telemetry.alex-popov-tech.workers.dev/stats
+                    -- Source: https://github.com/alex-popov-tech/store.nvim.telemetry
 })
 ```
 

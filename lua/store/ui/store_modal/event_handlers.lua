@@ -146,6 +146,7 @@ end
 ---@param repository Repository
 function M.on_repo_selected(modal, repository)
   modal.state.current_repository = repository
+  require("store.telemetry").track("view", repository.full_name)
 
   database.get_readme(repository, function(content, error)
     if error then
