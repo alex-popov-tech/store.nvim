@@ -9,7 +9,6 @@ local labels = {
   help = "Show help",
   reset = "Reset plugin data",
   open = "Open repository in browser",
-  switch_focus = "Switch focus between panes",
   sort = "Sort repositories",
   hover = "Show repository details",
   switch_list = "Switch to List tab",
@@ -39,7 +38,6 @@ local function get_handler(name)
     filter = actions.filter,
     help = actions.help,
     open = actions.open,
-    switch_focus = actions.switch_focus,
     sort = actions.sort,
     reset = actions.reset,
     hover = actions.hover,
@@ -83,7 +81,6 @@ end
 local ALL_TAB_ACTIONS = {
   "close",
   "help",
-  "switch_focus",
   "filter",
   "reset",
   "sort",

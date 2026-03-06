@@ -7,7 +7,7 @@ local sort = require("store.sort")
 ---@field width? number Window width (0.0-1.0 as percentage of screen width)
 ---@field height? number Window height (0.0-1.0 as percentage of screen height)
 ---@field proportions? {list: number, preview: number} Layout proportions for panes (0.0-1.0)
----@field keybindings? {help: string[], close: string[], filter: string[], reset: string[], open: string[], switch_focus: string[], sort: string[], hover: string[], switch_list: string[], switch_install: string[], switch_readme: string[], switch_docs: string[]} Key binding configuration
+---@field keybindings? {help: string[], close: string[], filter: string[], reset: string[], open: string[], sort: string[], hover: string[], switch_list: string[], switch_install: string[], switch_readme: string[], switch_docs: string[]} Key binding configuration
 ---@field preview_debounce? number Debounce delay for preview updates (ms)
 ---@field logging? string Logging level: "off"|"error"|"warn"|"info"|"debug" (default: "off")
 ---@field repository_renderer? RepositoryRenderer Function to render repository data for list display
@@ -22,7 +22,7 @@ local sort = require("store.sort")
 ---@field width number Window width (0.0-1.0 as percentage of screen width)
 ---@field height number Window height (0.0-1.0 as percentage of screen height)
 ---@field proportions {list: number, preview: number} Layout proportions for panes (0.0-1.0)
----@field keybindings {help: string[], close: string[], filter: string[], reset: string[], open: string[], switch_focus: string[], sort: string[], hover: string[], switch_list: string[], switch_install: string[], switch_readme: string[], switch_docs: string[]} Key binding configuration
+---@field keybindings {help: string[], close: string[], filter: string[], reset: string[], open: string[], sort: string[], hover: string[], switch_list: string[], switch_install: string[], switch_readme: string[], switch_docs: string[]} Key binding configuration
 ---@field preview_debounce number Debounce delay for preview updates (ms)
 ---@field data_source_url string URL for fetching plugin data
 ---@field logging string Logging level: "off"|"error"|"warn"|"info"|"debug" (default: "off")
@@ -177,7 +177,6 @@ local DEFAULT_USER_CONFIG = {
     filter = { "f" },
     reset = { "<leader>r" },
     open = { "<cr>", "o" },
-    switch_focus = { "<tab>", "<s-tab>" },
     sort = { "s" },
     hover = { "K" },
     switch_list = { "l", "L" },

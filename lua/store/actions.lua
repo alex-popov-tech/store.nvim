@@ -144,22 +144,6 @@ function M.open(instance)
   end
 end
 
-function M.switch_focus(instance)
-  logger.debug("Action: switch focus from " .. instance.state.current_focus)
-  if instance.list:get_window_id() == instance.state.current_focus then
-    instance.preview:focus()
-    instance.state.current_focus = instance.preview:get_window_id()
-    return
-  end
-  if instance.preview:get_window_id() == instance.state.current_focus then
-    instance.preview:save_cursor_on_blur()
-    instance.list:focus()
-    instance.state.current_focus = instance.list:get_window_id()
-    return
-  end
-  logger.warn("Unknown focus: " .. instance.state.current_focus)
-end
-
 function M.sort(instance)
   logger.debug("Action: sort")
   local previous_focus = instance.state.current_focus
@@ -254,20 +238,32 @@ end
 
 function M.switch_list(instance)
   logger.debug("Action: switch to list tab")
+  if instance.preview:get_window_id() == instance.state.current_focus then
+    instance.preview:save_cursor_on_blur()
+  end
   instance.list:set_active_tab("list")
+  instance.list:focus()
+  instance.state.current_focus = instance.list:get_window_id()
 end
 
 function M.switch_install(instance)
   logger.debug("Action: switch to install tab")
+  if instance.preview:get_window_id() == instance.state.current_focus then
+    instance.preview:save_cursor_on_blur()
+  end
   local repo = instance.state.current_repository
   local snippet = instance.state.install_catalogue and repo and instance.state.install_catalogue[repo.full_name]
   instance.list:render_install(repo, snippet, instance.state.plugin_manager_mode)
   instance.list:set_active_tab("install")
+  instance.list:focus()
+  instance.state.current_focus = instance.list:get_window_id()
 end
 
 function M.switch_readme(instance)
   logger.debug("Action: switch to readme tab")
   instance.preview:set_active_tab("readme")
+  instance.preview:focus()
+  instance.state.current_focus = instance.preview:get_window_id()
   local repo = instance.state.current_repository
   if repo then
     database.get_readme(repo, function(content, error)
@@ -283,6 +279,8 @@ end
 function M.switch_docs(instance)
   logger.debug("Action: switch to docs tab")
   instance.preview:set_active_tab("docs")
+  instance.preview:focus()
+  instance.state.current_focus = instance.preview:get_window_id()
   local repo = instance.state.current_repository
   if repo then
     database.get_docs(repo, function(content, error)
