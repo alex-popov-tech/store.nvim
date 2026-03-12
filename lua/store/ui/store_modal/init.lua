@@ -37,6 +37,7 @@ function M.new(config)
 
       total_installed_count = 0, -- Total installed plugins from lock file (static)
       installed_items = {}, -- Lookup table of installed plugin names for O(1) checks
+      download_stats = nil, -- Lookup table of plugin install counts from telemetry API
       install_catalogue = nil, -- Cached install catalogue data for detected plugin manager
       install_catalogue_manager = nil, -- Detected plugin manager identifier
       plugin_manager_mode = config.plugin_manager or "not-selected",
@@ -134,6 +135,11 @@ function StoreModal:open()
       event_handlers.on_installed_plugins(self, installed_data, mode, installed_err, overview)
     end
   )
+
+  -- Concurrently fetch download stats from telemetry
+  database.fetch_stats(function(data, err)
+    event_handlers.on_stats(self, data, err)
+  end)
 end
 
 function StoreModal:close()

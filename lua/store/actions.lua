@@ -319,6 +319,11 @@ function M.reset(instance)
       event_handlers.on_installed_plugins(instance, installed_data, mode, installed_err, overview)
     end
   )
+
+  -- Concurrently re-fetch download stats
+  database.fetch_stats(function(data, err)
+    event_handlers.on_stats(instance, data, err)
+  end)
 end
 
 function M.hover(instance)

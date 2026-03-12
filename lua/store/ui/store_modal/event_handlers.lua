@@ -142,6 +142,23 @@ function M.on_installed_plugins(modal, installed_data, mode, installed_err, over
   modal.state.install_catalogue_manager = nil
 end
 
+---Handle stats data response from telemetry API fetch
+---@param modal StoreModal The modal instance
+---@param data table|nil Stats data from telemetry API
+---@param err string|nil Error message if fetch failed
+function M.on_stats(modal, data, err)
+  if err or not data or not data.stats then
+    logger.warn("Stats fetch failed or empty: " .. tostring(err))
+    return
+  end
+  local lookup = {}
+  for _, entry in ipairs(data.stats) do
+    lookup[entry.plugin_full_name] = entry.installs or 0
+  end
+  modal.state.download_stats = lookup
+  logger.debug("Stats loaded: " .. vim.tbl_count(lookup) .. " plugins with download data")
+end
+
 ---@param modal StoreModal
 ---@param repository Repository
 function M.on_repo_selected(modal, repository)

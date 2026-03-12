@@ -69,6 +69,8 @@ local function fetch_remote_json(url, callback)
   })
 end
 
+local STATS_URL = "https://store-nvim-telemetry.alex-popov-tech.workers.dev/stats?period=month"
+
 ---@module "store.database"
 ---Database facade that orchestrates GitHub client and caching operations
 ---Maintains the same public API as the original database module
@@ -380,6 +382,23 @@ function M.clear()
     logger.info("Database reset completed in " .. string.format("%.1f", duration_ms) .. "ms")
     return nil
   end
+end
+
+---Fetch plugin install stats from telemetry API
+---@param callback fun(data: table|nil, error: string|nil) Callback with stats data or error
+function M.fetch_stats(callback)
+  if not config.get().telemetry then
+    callback(nil, nil)
+    return
+  end
+  fetch_remote_json(STATS_URL, function(data, err)
+    if err then
+      logger.warn("Failed to fetch stats: " .. err)
+      callback(nil, err)
+      return
+    end
+    callback(data, nil)
+  end)
 end
 
 return M
