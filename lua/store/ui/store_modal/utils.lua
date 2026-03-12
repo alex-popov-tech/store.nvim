@@ -5,10 +5,10 @@ local M = {}
 
 ---Apply sorting to current filtered repositories
 ---@param repos Repository[] Repositories for sorting
----@param installed_items table Installed plugins by full_name
+---@param ctx table Sort context { installed_items, download_stats }
 ---@param sort_type string Sort type to apply
 ---@return string? error
-function M.sort(repos, installed_items, sort_type)
+function M.sort(repos, ctx, sort_type)
   if sort_type == "default" then
     return "Cannot apply default sort, initial table should be used with optional filtering"
   end
@@ -19,7 +19,7 @@ function M.sort(repos, installed_items, sort_type)
   end
 
   table.sort(repos, function(a, b)
-    return sorting_func.fn(a, b, installed_items)
+    return sorting_func.fn(a, b, ctx)
   end)
 end
 

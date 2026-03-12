@@ -50,7 +50,7 @@ function M.filter(instance)
           logger.debug("Sorting " .. #instance.state.currently_displayed_repos .. " filtered repositories")
           local err = utils.sort(
             instance.state.currently_displayed_repos,
-            instance.state.installed_items,
+            { installed_items = instance.state.installed_items, download_stats = instance.state.download_stats },
             instance.state.sort_config.type
           )
           if err ~= nil then
@@ -195,7 +195,7 @@ function M.sort(instance)
           return
         end
         table.sort(instance.state.currently_displayed_repos, function(a, b)
-          return sorting.fn(a, b, instance.state.installed_items)
+          return sorting.fn(a, b, { installed_items = instance.state.installed_items, download_stats = instance.state.download_stats })
         end)
       end
 
