@@ -91,43 +91,54 @@ function M.validate_state(state)
     end
   end
 
-  -- Validate window state fields if present
-  if state.win_id ~= nil then
-    local win_err = validators.should_be_number(state.win_id, "list.win_id must be nil or a number")
-    if win_err then
-      return win_err
+  -- Validate grouped window state
+  if state.win ~= nil then
+    local win_tbl_err = validators.should_be_table(state.win, "list.win must be a table")
+    if win_tbl_err then
+      return win_tbl_err
+    end
+
+    if state.win.id ~= nil then
+      local win_err = validators.should_be_number(state.win.id, "list.win.id must be nil or a number")
+      if win_err then
+        return win_err
+      end
+    end
+
+    if state.win.is_open ~= nil then
+      if type(state.win.is_open) ~= "boolean" then
+        return "list.win.is_open must be nil or a boolean, got: " .. type(state.win.is_open)
+      end
+    end
+
+    if state.win.active_tab ~= nil then
+      local tab_err = validators.should_be_string(state.win.active_tab, "list.win.active_tab must be nil or a string")
+      if tab_err then
+        return tab_err
+      end
     end
   end
 
-  if state.buf_id ~= nil then
-    local buf_err = validators.should_be_number(state.buf_id, "list.buf_id must be nil or a number")
-    if buf_err then
-      return buf_err
+  -- Validate grouped buffer state
+  if state.buf ~= nil then
+    local buf_tbl_err = validators.should_be_table(state.buf, "list.buf must be a table")
+    if buf_tbl_err then
+      return buf_tbl_err
     end
-  end
 
-  if state.is_open ~= nil then
-    if type(state.is_open) ~= "boolean" then
-      return "list.is_open must be nil or a boolean, got: " .. type(state.is_open)
+    if state.buf.id ~= nil then
+      local buf_err = validators.should_be_number(state.buf.id, "list.buf.id must be nil or a number")
+      if buf_err then
+        return buf_err
+      end
     end
-  end
 
-  -- Validate operational state fields if present
-
-  -- Validate cursor state fields if present
-  if state.cursor_autocmd_id ~= nil then
-    local autocmd_err =
-      validators.should_be_number(state.cursor_autocmd_id, "list.cursor_autocmd_id must be nil or a number")
-    if autocmd_err then
-      return autocmd_err
-    end
-  end
-
-  if state.cursor_debounce_timer ~= nil then
-    local timer_err =
-      validators.should_be_number(state.cursor_debounce_timer, "list.cursor_debounce_timer must be nil or a number")
-    if timer_err then
-      return timer_err
+    if state.buf.install_id ~= nil then
+      local install_err =
+        validators.should_be_number(state.buf.install_id, "list.buf.install_id must be nil or a number")
+      if install_err then
+        return install_err
+      end
     end
   end
 

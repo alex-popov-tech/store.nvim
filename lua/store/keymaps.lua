@@ -9,10 +9,12 @@ local labels = {
   help = "Show help",
   reset = "Reset plugin data",
   open = "Open repository in browser",
-  switch_focus = "Switch focus between panes",
   sort = "Sort repositories",
-  install = "Install plugin to lazy.nvim",
   hover = "Show repository details",
+  switch_list = "Switch to List tab",
+  switch_install = "Switch to Install tab",
+  switch_readme = "Switch to Readme tab",
+  switch_docs = "Switch to Docs tab",
 }
 
 -- Get label for an action
@@ -36,11 +38,13 @@ local function get_handler(name)
     filter = actions.filter,
     help = actions.help,
     open = actions.open,
-    switch_focus = actions.switch_focus,
     sort = actions.sort,
-    install = actions.install,
     reset = actions.reset,
     hover = actions.hover,
+    switch_list = actions.switch_list,
+    switch_install = actions.switch_install,
+    switch_readme = actions.switch_readme,
+    switch_docs = actions.switch_docs,
   }
   return handlers[name]
 end
@@ -55,10 +59,10 @@ local function make_keymaps_for_actions(instance, actions)
 
     for _, action in ipairs(actions) do
       local keys = config.keybindings[action]
-      local handler = get_handler(action)
 
       for _, key in ipairs(keys) do
         vim.keymap.set("n", key, function()
+          local handler = get_handler(action)
           local success, err = pcall(handler, instance)
           if not success then
             logger.error("Keymap handler error for " .. action .. " on key " .. key .. ": " .. tostring(err))
@@ -74,24 +78,54 @@ local function make_keymaps_for_actions(instance, actions)
   end
 end
 
+local ALL_TAB_ACTIONS = {
+  "close",
+  "help",
+  "filter",
+  "reset",
+  "sort",
+  "open",
+  "hover",
+  "switch_list",
+  "switch_install",
+  "switch_readme",
+  "switch_docs",
+}
+
+local INSTALL_ACTIONS = {
+  "close",
+  "open",
+  "switch_list",
+  "switch_readme",
+  "switch_docs",
+}
+
 -- Public function to create keymap applier for list component
 ---@param instance StoreModal Modal instance
 ---@return fun(buf_id: number) Function to apply list keymaps to buffer
 function M.make_keymaps_for_list(instance)
-  return make_keymaps_for_actions(
-    instance,
-    { "close", "help", "switch_focus", "filter", "reset", "sort", "open", "install", "hover" }
-  )
+  return make_keymaps_for_actions(instance, ALL_TAB_ACTIONS)
 end
 
 -- Public function to create keymap applier for preview component
 ---@param instance StoreModal Modal instance
 ---@return fun(buf_id: number) Function to apply preview keymaps to buffer
 function M.make_keymaps_for_preview(instance)
-  return make_keymaps_for_actions(
-    instance,
-    { "close", "help", "switch_focus", "filter", "reset", "sort", "install", "open" }
-  )
+  return make_keymaps_for_actions(instance, ALL_TAB_ACTIONS)
+end
+
+-- Public function to create keymap applier for install buffer
+---@param instance StoreModal Modal instance
+---@return fun(buf_id: number) Function to apply install keymaps to buffer
+function M.make_keymaps_for_install(instance)
+  return make_keymaps_for_actions(instance, INSTALL_ACTIONS)
+end
+
+-- Public function to create keymap applier for docs buffer
+---@param instance StoreModal Modal instance
+---@return fun(buf_id: number) Function to apply docs keymaps to buffer
+function M.make_keymaps_for_docs(instance)
+  return make_keymaps_for_actions(instance, ALL_TAB_ACTIONS)
 end
 
 return M

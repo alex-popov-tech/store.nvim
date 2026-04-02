@@ -151,7 +151,8 @@ local function setup_keymaps(buf_id, instance)
       end
 
       instance:close()
-      require("store.telemetry").track("install", instance.config.repository.full_name)
+      local telemetry = package.loaded["store.telemetry"]
+      if telemetry then telemetry.track("install", instance.config.repository.full_name) end
       instance.config.on_confirm(extracted_data)
     end,
     ["<esc>"] = function()
@@ -177,7 +178,9 @@ end
 ---@param content string[] Content lines
 ---@return {width: number, height: number, row: number, col: number}
 local function calculate_dimensions(content)
-  local config = require("store.config").get()
+  local store_config = package.loaded["store.config"]
+  if not store_config then return { width = 60, height = 20, row = 5, col = 10 } end
+  local config = store_config.get()
   local layout = config.layout
 
   -- Calculate 70% of store modal dimensions as upper bounds
@@ -266,7 +269,9 @@ function M:open()
   end
 
   -- Get config for z-index
-  local config = require("store.config").get()
+  local store_config = package.loaded["store.config"]
+  if not store_config then return "InstallModal: store.config not loaded" end
+  local config = store_config.get()
 
   -- Create window using utility function
   local win_id, error_message = utils.create_floating_window({

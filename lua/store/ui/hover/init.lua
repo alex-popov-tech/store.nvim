@@ -27,7 +27,7 @@ function M.new(config)
     state = vim.tbl_deep_extend("force", DEFAULT_STATE, {
       buf_id = utils.create_scratch_buffer({
         filetype = "markdown",
-        buftype = "nofile",
+        buftype = "",
         modifiable = false,
       }),
     }),
@@ -38,16 +38,17 @@ function M.new(config)
 end
 
 ---Format repository information for display
----@param repo Repository The repository to format
+---@param config HoverConfig The hover config containing repository and stats
 ---@return string[] lines Formatted lines for display
-local function format_repository_info(repo)
+local function format_repository_info(config)
+  local repo = config.repository
   local lines = {}
 
   -- Title
   table.insert(lines, "# " .. repo.full_name)
   table.insert(lines, "")
 
-  -- Stats table
+  -- Stats line
   table.insert(
     lines,
     "⭐"
@@ -59,6 +60,35 @@ local function format_repository_info(repo)
       .. " 📅 created "
       .. repo.pretty.created_at
   )
+
+  -- Metrics table
+  local has_stars_trend = repo.stars.weekly ~= nil or repo.stars.monthly ~= nil
+  local has_downloads = config.download_stats_weekly ~= nil or config.download_stats_monthly ~= nil
+  local has_views = config.view_stats_weekly ~= nil or config.view_stats_monthly ~= nil
+
+  if has_stars_trend or has_downloads or has_views then
+    table.insert(lines, "")
+    table.insert(lines, "| Metric | Weekly | Monthly |")
+    table.insert(lines, "|--------|--------|---------|")
+
+    if has_stars_trend then
+      local weekly = repo.stars.weekly ~= nil and ("+" .. tostring(repo.stars.weekly)) or "-"
+      local monthly = repo.stars.monthly ~= nil and ("+" .. tostring(repo.stars.monthly)) or "-"
+      table.insert(lines, "| 🚀 Stars | " .. weekly .. " | " .. monthly .. " |")
+    end
+
+    if has_downloads then
+      local weekly = config.download_stats_weekly ~= nil and tostring(config.download_stats_weekly) or "-"
+      local monthly = config.download_stats_monthly ~= nil and tostring(config.download_stats_monthly) or "-"
+      table.insert(lines, "| 📥 Downloads | " .. weekly .. " | " .. monthly .. " |")
+    end
+
+    if has_views then
+      local weekly = config.view_stats_weekly ~= nil and tostring(config.view_stats_weekly) or "-"
+      local monthly = config.view_stats_monthly ~= nil and tostring(config.view_stats_monthly) or "-"
+      table.insert(lines, "| 👀 Views | " .. weekly .. " | " .. monthly .. " |")
+    end
+  end
 
   -- Description
   if repo.description ~= "" then
@@ -83,8 +113,11 @@ function Hover:show()
     return nil
   end
 
-  local repo = self.config.repository
-  local content_lines = format_repository_info(repo)
+  if not self.state.buf_id or not vim.api.nvim_buf_is_valid(self.state.buf_id) then
+    return "Hover: buffer is invalid"
+  end
+
+  local content_lines = format_repository_info(self.config)
 
   -- Set buffer content
   vim.api.nvim_buf_set_option(self.state.buf_id, "modifiable", true)

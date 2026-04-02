@@ -1,9 +1,16 @@
 ---@class HeadingConfig: ComponentLayout
 
----@class HeadingState
----@field win_id number|nil Window ID
----@field buf_id number|nil Buffer ID
+---@class HeadingBufState
+---@field id number|nil Buffer ID
+---@field wave_handle table|nil Wave animation handle
+
+---@class HeadingWinState
+---@field id number|nil Window ID
 ---@field is_open boolean Window open status
+
+---@class HeadingState
+---@field buf HeadingBufState Buffer state
+---@field win HeadingWinState Window state
 ---@field state string current component state - "loading", "ready", "error"
 ---@field filter_query string Current filter query
 ---@field sort_type string Current sort type

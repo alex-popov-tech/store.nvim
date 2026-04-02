@@ -15,7 +15,7 @@ local DEFAULT_STATE = {
   is_open = false,
   state = "loading",
   sort_types = {},
-  current_sort = "default",
+  current_sort = "recently_updated",
 }
 
 ---Create buffer content with checkmarks for current sort
@@ -81,11 +81,11 @@ end
 ---@return string Selected sort type
 function SortSelect:get_selected_sort()
   if not self.state.win_id or not vim.api.nvim_win_is_valid(self.state.win_id) then
-    return self.state.sort_types[1] or "default"
+    return self.state.sort_types[1] or "recently_updated"
   end
 
   local cursor_line = vim.api.nvim_win_get_cursor(self.state.win_id)[1]
-  return self.state.sort_types[cursor_line] or self.state.sort_types[1] or "default"
+  return self.state.sort_types[cursor_line] or self.state.sort_types[1] or "recently_updated"
 end
 
 ---Handle selection and close window
@@ -160,6 +160,21 @@ function SortSelect:_update_buffer_content(buf_id)
 
   utils.set_lines(target_buf_id, content_lines)
 
+  local ns = vim.api.nvim_create_namespace("store_sort_keys")
+  vim.api.nvim_buf_clear_namespace(target_buf_id, ns, 0, -1)
+  for i, sort_type in ipairs(self.state.sort_types) do
+    local sort_def = sort.sorts[sort_type]
+    if sort_def and sort_def.key_col then
+      local is_current = sort_type == self.state.current_sort
+      local prefix_len = is_current and 4 or 2 -- "✓ " = 4 bytes, "  " = 2 bytes
+      local col = prefix_len + sort_def.key_col
+      vim.api.nvim_buf_set_extmark(target_buf_id, ns, i - 1, col, {
+        end_col = col + 1,
+        hl_group = "StoreSortKey",
+      })
+    end
+  end
+
   return nil
 end
 
@@ -181,7 +196,22 @@ function SortSelect:_setup_keymaps(buf_id)
     ["q"] = function()
       self:_cancel_and_close()
     end,
+    ["Q"] = function()
+      self:_cancel_and_close()
+    end,
   }
+
+  for i, sort_type in ipairs(self.state.sort_types) do
+    local sort_def = sort.sorts[sort_type]
+    if sort_def and sort_def.key then
+      local callback = function()
+        vim.api.nvim_win_set_cursor(self.state.win_id, { i, 0 })
+        self:_select_and_close()
+      end
+      keymaps[sort_def.key:lower()] = callback
+      keymaps[sort_def.key:upper()] = callback
+    end
+  end
 
   for key, callback in pairs(keymaps) do
     vim.keymap.set("n", key, callback, {
@@ -216,7 +246,8 @@ function SortSelect:open()
   end
 
   -- Create window
-  local store_config = require("store.config")
+  local store_config = package.loaded["store.config"]
+  if not store_config then return "SortSelect: store.config not loaded" end
   local plugin_config = store_config.get()
 
   local win_id, win_error = utils.create_floating_window({

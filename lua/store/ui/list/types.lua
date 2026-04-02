@@ -1,19 +1,35 @@
----@class ListState
----@field win_id number|nil Window ID
----@field buf_id number|nil Buffer ID
+---@class ListBufState
+---@field id number|nil List buffer ID
+---@field install_id number|nil Install buffer ID (buftype=acwrite)
+---@field cursor_autocmd_id number|nil CursorMoved autocmd on list buffer
+---@field cursor_debounce_timer number|nil Debounce timer for cursor movement
+---@field install_write_autocmd_id number|nil BufWriteCmd autocmd on install buffer
+---@field full_dataset_cache table<string, string> Rendered line cache keyed by full_name
+
+---@class ListWinState
+---@field id number|nil Window ID
 ---@field is_open boolean Window open status
+---@field active_tab string Active tab ("list" or "install")
+
+---@class ListState
+---@field buf ListBufState Buffer state
+---@field win ListWinState Window state
 ---@field state string current component state - "loading", "ready", "error"
 ---@field items Repository[] List of repositories
 ---@field installed_items table<string, boolean> Lookup table of installed plugin names for O(1) checks
----@field cursor_autocmd_id number|nil Cursor movement autocmd ID
----@field cursor_debounce_timer number|nil Cursor movement debounce timer
 ---@field current_repository Repository|nil Currently selected repository
----@field full_dataset_cache table<string, string> Cache of rendered lines keyed by full_name
+---@field list_cursor_position table|nil Saved cursor position for list tab
+---@field sort_type SortType Current sort type for renderer opts
+---@field download_stats_monthly table<string, number>|nil Monthly download stats map
+---@field view_stats_monthly table<string, number>|nil Monthly view stats map
 
 ---@class ListStateUpdate
 ---@field state string
 ---@field items Repository[]|nil?
 ---@field installed_items table<string, boolean>|nil?
+---@field sort_type SortType|nil?
+---@field download_stats_monthly table<string, number>|nil?
+---@field view_stats_monthly table<string, number>|nil?
 
 ---@class ListConfig
 ---@field width number Window width
@@ -22,6 +38,7 @@
 ---@field col number Window column position
 ---@field on_repo fun(repository: Repository) Callback when cursor moves over repository
 ---@field keymaps_applier fun(buf_id: number) Function to apply keymaps to buffer
+---@field keymaps_applier_install fun(buf_id: number) Function to apply keymaps to install buffer
 ---@field cursor_debounce_delay number Debounce delay for cursor movement in milliseconds
 ---@field repository_renderer RepositoryRenderer Function to render repository data for list display
 

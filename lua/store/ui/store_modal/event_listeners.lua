@@ -4,10 +4,13 @@ local utils = require("store.utils")
 
 local M = {}
 
+local augroup = vim.api.nvim_create_augroup("StoreNvim", { clear = true })
+
 ---@param modal StoreModal The modal instance
 ---@return number autocmd_id to be deleted
 function M.listen_for_focus_change(modal)
   return vim.api.nvim_create_autocmd("WinEnter", {
+    group = augroup,
     callback = function()
       event_handlers.on_focus_change(modal)
     end,
@@ -25,6 +28,7 @@ function M.listen_for_resize(modal)
   end, debounce_delay)
 
   return vim.api.nvim_create_autocmd("VimResized", {
+    group = augroup,
     callback = function()
       debounced_resize()
     end,
@@ -34,27 +38,37 @@ end
 
 ---@param modal StoreModal The modal instance
 function M.listen_for_window_close(modal)
-  local heading_win_id_str = tostring(modal.heading:get_window_id())
-  local list_win_id_str = tostring(modal.list:get_window_id())
-  local preview_win_id_str = tostring(modal.preview:get_window_id())
+  local heading_win = modal.heading:get_window_id()
+  local list_win = modal.list:get_window_id()
+  local preview_win = modal.preview:get_window_id()
 
-  local autocmd_id = 0
-  autocmd_id = vim.api.nvim_create_autocmd("WinClosed", {
-    desc = "Handle unexpected window close for store.nvim modal",
-    callback = function(args)
-      -- if closed as intented to, ignore this autocmd and delete it
-      if modal.state.is_closing then
-        vim.api.nvim_del_autocmd(tonumber(autocmd_id))
-        return
-      end
+  -- If any component window is missing, skip listener (modal is in broken state)
+  if not heading_win or not list_win or not preview_win then
+    return
+  end
 
-      local win_id_str = args.match
-      if win_id_str == heading_win_id_str or win_id_str == list_win_id_str or win_id_str == preview_win_id_str then
-        modal:close()
-        vim.api.nvim_del_autocmd(tonumber(autocmd_id))
-      end
-    end,
-  })
+  local function on_unexpected_close()
+    if modal.state.is_closing then
+      return
+    end
+    modal:close()
+  end
+
+  local win_ids = {
+    tostring(heading_win),
+    tostring(list_win),
+    tostring(preview_win),
+  }
+
+  for _, win_id_str in ipairs(win_ids) do
+    local id = vim.api.nvim_create_autocmd("WinClosed", {
+      group = augroup,
+      pattern = win_id_str,
+      desc = "Handle unexpected window close for store.nvim modal (win " .. win_id_str .. ")",
+      callback = on_unexpected_close,
+    })
+    table.insert(modal.state.autocmds, id)
+  end
 end
 
 return M

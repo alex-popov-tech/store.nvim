@@ -2,6 +2,97 @@
 
 All notable changes to this project will be documented in this file.
 
+## [4.0.0] - 2026-04-01
+
+### ✨ Features Added
+
+**New services in the store.nvim family:**
+
+[store.nvim.readme-cache](https://github.com/alex-popov-tech/store.nvim.readme-cache):
+- **Server-side README processing** — READMEs are now pre-processed and cached on a Cloudflare Workers + R2 CDN. Badge stripping, HTML entity cleanup, image tag conversion, and blank line collapsing all happen server-side via a proper markdown AST parser (remark/unified) — no more ~5 text-based regex passes on the client
+- **Stale-while-revalidate caching** — processed READMEs are served instantly from R2 with background revalidation using GitHub ETags
+
+[store.nvim.telemetry](https://github.com/alex-popov-tech/store.nvim.telemetry):
+- **Anonymous usage tracking service** — self-hosted on Cloudflare Workers + D1. Tracks plugin views and installs with hourly deduplication, daily active users with country breakdown
+- **Privacy-first design** — IP addresses are never stored; SHA-256 hashed with a daily rotating salt and purged after 90 days
+
+`store.nvim`:
+- **📐 Tab Layout Mode** — new `layout = "tab"` option opens store in a dedicated Neovim tab page with native splits instead of floating windows. Pairs well with image preview for smoother rendering
+- **🖼️ Image Preview** — optional [image.nvim](https://github.com/3rd/image.nvim) integration renders inline images from plugin READMEs directly in your terminal — great for previewing colorschemes. Requires a terminal with image protocol support (Kitty, Ghostty, WezTerm)
+
+  **Example setup with image.nvim:**
+  ```lua
+  {
+    "alex-popov-tech/store.nvim",
+    dependencies = {
+      { "OXY2DEV/markview.nvim", opts = {} },
+      {
+        "3rd/image.nvim",
+        opts = { integrations = {
+          markdown = {
+            enabled = false,
+          },
+        } },
+      },
+    },
+    opts = {
+      layout = "tab", -- recommended for image preview
+    },
+    cmd = { "Store" },
+  }
+  ```
+
+- **📄 Multi-Doc Navigation** — browse all documentation files a plugin provides (README, CHANGELOG, doc/*.txt, etc.) with `D` to cycle through docs and `R` to jump back to README. Dynamic tab bar shows current doc and file count
+- **📊 New Sort Options** — sort plugins by community activity:
+  - `Rising Stars (weekly)` — stars gained this week
+  - `Rising Stars (monthly)` — stars gained this month
+  - `Most Downloads (monthly)` — download count from telemetry
+  - `Most Views (monthly)` — view count from telemetry
+- **📈 Opt-out Telemetry** — anonymous usage tracking powers download/view sort options. No host info, no IP — only aggregated counts. Configure with `telemetry = true/false` (default: `true`)
+- **🎯 Redesigned Heading** — text labels replace emojis for better clarity. Active filter, sort mode, and keybinding hints shown inline. Installed plugin count and plugin manager info displayed prominently
+- **🌊 Loading Wave Animation** — animated wave effect in the heading while data loads
+- **📏 Graceful Resize Handling** — modal auto-closes with a notification if the terminal becomes too small. Debounced resize with configurable delay via `resize_debounce` (default: 30ms)
+
+### ⚡ Performance Improvements
+
+- **Server-side README processing** — READMEs are pre-processed and cached on a CDN worker, dramatically reducing client-side work
+- **Smart image rendering** — debounced rendering keeps navigation snappy; image count capped at 5 per preview
+- **Database migrated from GitHub Gist to GitHub Release assets** — faster, more reliable downloads with proper CDN caching
+
+### 🛠️ API Changes
+
+**📐 New Configuration Options**
+- `layout` — `"modal"` (default) or `"tab"` for native split layout
+- `proportions` — `{list = 0.5, preview = 0.5}` controls pane split ratio
+- `resize_debounce` — debounce delay in ms (10-200, default: 30)
+- `telemetry` — enable/disable anonymous usage tracking (default: `true`)
+- `readme_cache_url` — base URL for pre-processed README cache
+
+**📊 Repository Renderer Update**
+- **Breaking Change**: `repository_renderer` function signature now includes an `opts` table:
+
+  ```lua
+  require("store").setup({
+    ---@param repo Repository
+    ---@param opts RendererOpts -- { sort_type, downloads, views, is_installed }
+    repository_renderer = function(repo, opts)
+      return {
+        { content = opts.is_installed and "installed" or "available", limit = 10 },
+        { content = repo.full_name, limit = 35 },
+        { content = "⭐" .. repo.stars.curr, limit = 10 },
+      }
+    end,
+  })
+  ```
+
+**⭐ Stars Field Schema**
+- **Breaking Change**: `repo.stars` is now a table `{curr, weekly, monthly}` instead of a plain number
+
+**🔑 New Keybindings**
+- `D` — cycle through plugin documentation files
+- `R` — jump to README tab
+- Configurable via `switch_docs` and `switch_readme` in keybindings config
+
 ## [3.0.0] - 2025-10-02
 
 ### ✨ Features Added

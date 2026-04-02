@@ -3,7 +3,7 @@ local M = {}
 -- Layout constants
 local MIN_MODAL_WIDTH = 85
 local MIN_MODAL_HEIGHT = 18
-local HEADER_HEIGHT = 6
+local HEADER_HEIGHT = 5
 local GAP_BETWEEN_WINDOWS = 2
 
 ---Try to use vim.notify, fall back to print if it fails
@@ -20,7 +20,8 @@ end
 ---Get the plugins folder path from config or default
 ---@return string The expanded plugins folder path
 function M.get_plugins_folder()
-  local config = require("store.config").get()
+  local config_mod = package.loaded["store.config"]
+  local config = config_mod and type(config_mod.get) == "function" and config_mod.get() or {}
   if config.plugins_folder then
     return vim.fn.expand(config.plugins_folder)
   end
@@ -220,41 +221,6 @@ function M.create_advanced_filter(query_string)
     nil
 end
 
--- Function to strip HTML tags from markdown content while preserving markdown syntax
--- This function is only called when HTML tags are detected in the content
----@param content string The content to strip HTML tags from (guaranteed to contain HTML)
----@return string The content with HTML tags removed
-function M.strip_html_tags(content)
-  -- Don't process lines that are clearly markdown and should be preserved
-  -- Skip code blocks (lines starting with ```)
-  if content:match("^```") then
-    return content
-  end
-
-  -- Skip markdown link syntax [text](url) at start of line
-  if content:match("^%s*%[[^%]]*%]%(.-%)") then
-    return content
-  end
-
-  -- Skip lines that are just ASCII art or similar (contain lots of special chars)
-  -- But not if they contain HTML tags (< and >)
-  local special_char_count = 0
-  local total_chars = #content
-  for char in content:gmatch("[^%w%s]") do
-    special_char_count = special_char_count + 1
-  end
-  if total_chars > 0 and (special_char_count / total_chars) > 0.4 and not content:match("[<>]") then
-    return content
-  end
-
-  -- Remove HTML tags while preserving the content inside them
-  local cleaned = content:gsub("<%s*[^>]*>", "")
-
-  -- Clean up extra whitespace that might be left behind
-  cleaned = cleaned:gsub("%s+", " ")
-  return vim.trim(cleaned)
-end
-
 ---Calculate window dimensions and positions for 3-window layout
 ---@param layout_config {width: number, height: number, proportions: {list: number, preview: number}}
 ---@param popup_data {filter: {width: number, height: number}, sort: {lines_count: number, longest_line: number}, help: {lines_count: number, longest_line: number}}
@@ -282,17 +248,21 @@ function M.calculate_layout(layout_config, popup_data)
     return nil, "Invalid screen dimensions"
   end
 
+  -- Usable area excludes cmdline and statusline; borders add 2 rows to visual height
+  local usable_height = screen_height - vim.o.cmdheight - (vim.o.laststatus > 0 and 1 or 0)
+
   -- Convert percentages to absolute values
   local total_width = math.floor(screen_width * layout_config.width)
-  local total_height = math.floor(screen_height * layout_config.height)
+  local total_height = math.floor(usable_height * layout_config.height)
 
   -- Validate minimum dimensions using global constants
   if total_width < MIN_MODAL_WIDTH or total_height < MIN_MODAL_HEIGHT then
     return nil, string.format("Modal dimensions too small (minimum: %dx%d)", MIN_MODAL_WIDTH, MIN_MODAL_HEIGHT)
   end
 
-  -- Calculate positioning to center the modal
-  local start_row = math.floor((screen_height - total_height) / 2)
+  -- Calculate positioning to center the modal within usable area
+  -- +1 ensures header top border (at start_row - 1) stays on screen
+  local start_row = math.max(1, math.floor((usable_height - total_height) / 2))
   local start_col = math.floor((screen_width - total_width) / 2)
 
   -- Layout dimensions
@@ -308,8 +278,8 @@ function M.calculate_layout(layout_config, popup_data)
 
   -- Window splits using proportions
   local list_width = math.floor(total_width * proportions.list)
-  -- Subtract gap to align with header
-  local preview_width = math.floor(total_width * proportions.preview) - 2
+  -- Calculate preview as remainder so right border aligns with header
+  local preview_width = total_width - list_width - 3
 
   -- Validate calculated widths
   if list_width <= 0 or preview_width <= 0 then
@@ -366,14 +336,20 @@ function M.calculate_layout(layout_config, popup_data)
     return nil, "help dimensions (lines_count, longest_line) must be provided"
   end
 
-  -- Filter popup: use provided dimensions
+  -- Filter popup: use provided dimensions, center input + hints as a group
   local filter_width = popup_data.filter.width
   local filter_height = popup_data.filter.height
+  local filter_hints_height = 11
+  local filter_combo_height = filter_height + 2 + filter_hints_height + 2 - 1 -- borders, overlapping separator
+  local filter_combo_row = math.floor((screen_height - filter_combo_height) / 2)
   layout.filter = {
     width = filter_width,
     height = filter_height,
-    row = math.floor((screen_height - filter_height) / 2),
+    row = filter_combo_row,
     col = math.floor((screen_width - filter_width) / 2),
+    hints_row = filter_combo_row + filter_height + 1,
+    hints_col = math.floor((screen_width - filter_width) / 2),
+    hints_height = filter_hints_height,
   }
 
   -- Sort popup: use provided dimensions with padding
@@ -401,6 +377,17 @@ function M.calculate_layout(layout_config, popup_data)
   return layout, nil
 end
 
+---Set a Neovim option only if the current value differs from the desired value
+---@param name string Option name
+---@param value any Desired value
+---@param scope {buf?: number, win?: number} Scope table for nvim_get/set_option_value
+local function set_option_if_changed(name, value, scope)
+  local current = vim.api.nvim_get_option_value(name, scope)
+  if current ~= value then
+    vim.api.nvim_set_option_value(name, value, scope)
+  end
+end
+
 ---Create a scratch buffer with standard options for UI components
 ---@param opts? {filetype?: string, buftype?: string, name?: string, modifiable?: boolean, readonly?: boolean} Optional buffer configuration
 ---@return number Buffer ID
@@ -422,7 +409,7 @@ function M.create_scratch_buffer(opts)
   local buf_opts = vim.tbl_deep_extend("force", default_buf_opts, opts)
 
   for option, value in pairs(buf_opts) do
-    vim.api.nvim_set_option_value(option, value, { buf = buf_id })
+    set_option_if_changed(option, value, { buf = buf_id })
   end
 
   if opts.name then
@@ -442,7 +429,10 @@ end
 ---@return string|nil error_message Error message on failure, nil on success
 function M.create_floating_window(params)
   local validators = require("store.validators")
-  local store_config = require("store.config")
+  local store_config = package.loaded["store.config"]
+  if not store_config then
+    return nil, "store.config not loaded"
+  end
 
   local err = validators.should_be_table(params, "Parameters must be a table")
   if err then
@@ -484,6 +474,8 @@ function M.create_floating_window(params)
     border = config.border or "rounded",
     zindex = config.zindex or plugin_config.zindex.popup,
     focusable = config.focusable,
+    title = config.title,
+    title_pos = config.title_pos,
   }
 
   local win_id = vim.api.nvim_open_win(params.buf_id, enter_window, win_config)
@@ -491,17 +483,22 @@ function M.create_floating_window(params)
     return nil, "Failed to create window"
   end
 
+  vim.api.nvim_win_set_var(win_id, "store_window", true)
+
   local common_opts = {
     number = false,
     relativenumber = false,
     signcolumn = "no",
     foldcolumn = "0",
     colorcolumn = "",
+    cursorcolumn = false,
   }
 
   local final_opts = vim.tbl_deep_extend("force", common_opts, opts)
   for option, value in pairs(final_opts) do
-    local success, err = pcall(vim.api.nvim_set_option_value, option, value, { win = win_id })
+    local success, err = pcall(function()
+      set_option_if_changed(option, value, { win = win_id })
+    end)
     if not success then
       return win_id, string.format("Failed to set window option %s: %s", option, err)
     end
@@ -514,18 +511,22 @@ end
 ---@param buf_id number Buffer ID
 ---@param lines string[] Lines to set in the buffer
 function M.set_lines(buf_id, lines)
+  if not buf_id or not vim.api.nvim_buf_is_valid(buf_id) then
+    return
+  end
+
   -- Store original states
   local was_modifiable = vim.api.nvim_get_option_value("modifiable", { buf = buf_id })
   local was_readonly = vim.api.nvim_get_option_value("readonly", { buf = buf_id })
 
   -- Temporarily make modifiable and not readonly to set lines
-  vim.api.nvim_set_option_value("modifiable", true, { buf = buf_id })
-  vim.api.nvim_set_option_value("readonly", false, { buf = buf_id })
-  vim.api.nvim_buf_set_lines(buf_id, 0, -1, false, lines)
+  set_option_if_changed("modifiable", true, { buf = buf_id })
+  set_option_if_changed("readonly", false, { buf = buf_id })
+  pcall(vim.api.nvim_buf_set_lines, buf_id, 0, -1, false, lines)
 
-  -- Restore original states
-  vim.api.nvim_set_option_value("modifiable", was_modifiable, { buf = buf_id })
-  vim.api.nvim_set_option_value("readonly", was_readonly, { buf = buf_id })
+  -- Always restore original states
+  pcall(set_option_if_changed, "modifiable", was_modifiable, { buf = buf_id })
+  pcall(set_option_if_changed, "readonly", was_readonly, { buf = buf_id })
 end
 
 ---Create a debounced version of a function
@@ -744,7 +745,10 @@ function M.get_installed_plugins(opts, callback)
     return
   end
 
-  local logger = require("store.logger").createLogger({ context = "utils" })
+  local logger_mod = package.loaded["store.logger"]
+  local logger = logger_mod and type(logger_mod.createLogger) == "function"
+    and logger_mod.createLogger({ context = "utils" })
+    or { debug = function() end, warn = function() end, info = function() end, error = function() end }
 
   local preferred_manager = opts.preferred_manager
   if preferred_manager == nil or preferred_manager == "" then

@@ -56,24 +56,39 @@ function M.validate_state(state)
     end
   end
 
-  -- Validate window state fields
-  if state.win_id ~= nil then
-    local win_err = validators.should_be_number(state.win_id, "heading.win_id must be nil or a number")
-    if win_err then
-      return win_err
+  -- Validate grouped window state
+  if state.win ~= nil then
+    local win_tbl_err = validators.should_be_table(state.win, "heading.win must be a table")
+    if win_tbl_err then
+      return win_tbl_err
+    end
+
+    if state.win.id ~= nil then
+      local win_err = validators.should_be_number(state.win.id, "heading.win.id must be nil or a number")
+      if win_err then
+        return win_err
+      end
+    end
+
+    if state.win.is_open ~= nil then
+      if type(state.win.is_open) ~= "boolean" then
+        return "heading.win.is_open must be nil or a boolean, got: " .. type(state.win.is_open)
+      end
     end
   end
 
-  if state.buf_id ~= nil then
-    local buf_err = validators.should_be_number(state.buf_id, "heading.buf_id must be nil or a number")
-    if buf_err then
-      return buf_err
+  -- Validate grouped buffer state
+  if state.buf ~= nil then
+    local buf_tbl_err = validators.should_be_table(state.buf, "heading.buf must be a table")
+    if buf_tbl_err then
+      return buf_tbl_err
     end
-  end
 
-  if state.is_open ~= nil then
-    if type(state.is_open) ~= "boolean" then
-      return "heading.is_open must be nil or a boolean, got: " .. type(state.is_open)
+    if state.buf.id ~= nil then
+      local buf_err = validators.should_be_number(state.buf.id, "heading.buf.id must be nil or a number")
+      if buf_err then
+        return buf_err
+      end
     end
   end
 

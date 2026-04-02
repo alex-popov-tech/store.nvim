@@ -44,7 +44,8 @@ function M.createLogger(options)
   ---@param level string The log level to check
   ---@return boolean should_log True if the log level should be shown
   local function should_log(level)
-    local logging_level = require("store.config").get().logging
+    local config_mod = package.loaded["store.config"]
+    local logging_level = config_mod and type(config_mod.get) == "function" and config_mod.get().logging or "off"
     local current_level = log_levels[logging_level] or 0
     local message_level = log_levels[level] or 0
     return message_level <= current_level and message_level > 0
@@ -67,7 +68,12 @@ function M.createLogger(options)
 
     -- Format and send to tryNotify
     local formatted = format_message(level, message)
-    require("store.utils").tryNotify(formatted)
+    local utils_mod = package.loaded["store.utils"]
+    if utils_mod and type(utils_mod.tryNotify) == "function" then
+      utils_mod.tryNotify(formatted)
+    else
+      print(formatted)
+    end
   end
 
   ---Debug level logging

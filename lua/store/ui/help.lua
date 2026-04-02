@@ -7,19 +7,16 @@ local M = {}
 ---@return table[] Array of help items with keybinding and action fields
 local function _generate_help_items(keybindings)
   local help_items = {}
-  local keymaps = require("store.keymaps")
+  local keymaps = package.loaded["store.keymaps"]
+  if not keymaps then return help_items end
 
   for action, keys in pairs(keybindings) do
     local label = keymaps.get_label(action)
-
     if keys and label then
-      -- Add a line for each key that triggers this action
-      for _, key in ipairs(keys) do
-        table.insert(help_items, {
-          keybinding = key,
-          action = label,
-        })
-      end
+      table.insert(help_items, {
+        keybinding = table.concat(keys, " / "),
+        action = label,
+      })
     end
   end
 
@@ -41,55 +38,21 @@ end
 -- Static instance to prevent multiple opens
 local instance = nil
 
----Calculate column widths for help content
----@param help_items table[] Array of help items
----@return number, number max_key_width, max_action_width
-local function _calculate_column_widths(help_items)
-  local max_key_width = 3 -- Minimum for "Key" header
-  local max_action_width = 6 -- Minimum for "Action" header
-
-  for _, item in ipairs(help_items) do
-    max_key_width = math.max(max_key_width, vim.fn.strchars(item.keybinding))
-    max_action_width = math.max(max_action_width, vim.fn.strchars(item.action))
-  end
-
-  return max_key_width, max_action_width
-end
-
----Format a single help line similar to list component formatting
----@param key string Keybinding
----@param action string Action description
----@param key_width number Width for key column
----@param action_width number Width for action column
----@return string Formatted line
-local function _format_help_line(key, action, key_width, action_width)
-  -- Use padding similar to list component
-  local key_part = string.format("%-" .. key_width .. "s", key)
-  local action_part = string.format("%-" .. action_width .. "s", action)
-
-  -- Add spacing between columns
-  return key_part .. "  " .. action_part
-end
-
----Generate help content lines
+---Generate help content as markdown table
 ---@return string[] List of content lines
 local function _create_content_lines()
-  -- Generate help items from keybindings configuration
   local help_items = _generate_help_items(instance.config.keybindings)
-  local key_width, action_width = _calculate_column_widths(help_items)
   local lines = {}
 
-  -- Add header
-  table.insert(lines, _format_help_line("Key", "Action", key_width, action_width))
+  table.insert(lines, "")
+  table.insert(lines, "| Key | Action |")
+  table.insert(lines, "|-----|--------|")
 
-  -- Add separator line
-  local separator = string.rep("-", key_width) .. "  " .. string.rep("-", action_width)
-  table.insert(lines, separator)
-
-  -- Add help items
   for _, item in ipairs(help_items) do
-    table.insert(lines, _format_help_line(item.keybinding, item.action, key_width, action_width))
+    table.insert(lines, "| `" .. item.keybinding .. "` | " .. item.action .. " |")
   end
+
+  table.insert(lines, "")
 
   return lines
 end
@@ -123,9 +86,9 @@ local function _create_buffer()
   vim.api.nvim_buf_set_option(buf_id, "modifiable", false)
   vim.api.nvim_buf_set_option(buf_id, "readonly", true)
   vim.api.nvim_buf_set_option(buf_id, "bufhidden", "wipe")
-  vim.api.nvim_buf_set_option(buf_id, "buftype", "nofile")
+  vim.api.nvim_buf_set_option(buf_id, "buftype", "")
   vim.api.nvim_buf_set_option(buf_id, "buflisted", false)
-  vim.api.nvim_buf_set_option(buf_id, "filetype", "text")
+  vim.api.nvim_buf_set_option(buf_id, "filetype", "markdown")
 
   -- Set buffer name
   vim.api.nvim_buf_set_name(buf_id, "Help")
@@ -159,19 +122,35 @@ local function _create_window(buf_id)
   local help_layout = instance.config.layout
 
   -- Create window
-  local store_config = require("store.config")
+  local store_config = package.loaded["store.config"]
+  if not store_config then return nil end
   local plugin_config = store_config.get()
+
+  -- Compute width from actual buffer content (longest line)
+  local content_lines = vim.api.nvim_buf_get_lines(buf_id, 0, -1, false)
+  local max_width = 0
+  for _, line in ipairs(content_lines) do
+    max_width = math.max(max_width, vim.fn.strdisplaywidth(line))
+  end
+  local width = math.max(max_width, 1) + 5 -- +5 for markview table border decorations
+  local height = #content_lines
+  local screen_width = vim.o.columns
+  local screen_height = vim.o.lines
 
   local win_id = vim.api.nvim_open_win(buf_id, true, {
     relative = "editor",
-    width = help_layout.width,
-    height = help_layout.height,
-    row = help_layout.row,
-    col = help_layout.col,
+    width = width,
+    height = height,
+    row = math.floor((screen_height - height) / 2),
+    col = math.floor((screen_width - width) / 2),
     style = "minimal",
-    border = "rounded",
+    border = "none",
     zindex = plugin_config.zindex.popup,
   })
+
+  if win_id then
+    vim.api.nvim_win_set_var(win_id, "store_window", true)
+  end
 
   return win_id
 end

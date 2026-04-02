@@ -1,12 +1,22 @@
----@class PreviewState
----@field win_id number|nil Window ID
----@field buf_id number|nil Buffer ID
+---@class PreviewBufState
+---@field id number|nil Buffer ID (markdown/readme)
+---@field docs_id number|nil Docs buffer ID (help)
+
+---@class PreviewWinState
+---@field id number|nil Window ID
 ---@field is_open boolean Window open status
+---@field active_tab string Active tab ("readme" or "docs")
+
+---@class PreviewState
+---@field buf PreviewBufState Buffer state
+---@field win PreviewWinState Window state
 ---@field state string current component state - "loading", "ready", "error"
 ---@field content string[] Array of content lines
 ---@field readme_id string|nil README identifier for cursor position tracking
 ---@field cursor_positions table Cursor positions for different README files
 ---@field current_readme_id string|nil Current README identifier
+---@field docs_cursor_positions table Cursor positions for different docs pages
+---@field current_docs_id string|nil Current docs identifier
 
 ---@class PreviewStateUpdate
 ---@field state string?
@@ -26,8 +36,11 @@
 ---@field open fun(self: Preview): string|nil
 ---@field close fun(self: Preview): string|nil
 ---@field render fun(self: Preview, state: PreviewStateUpdate): string|nil
+---@field render_docs fun(self: Preview, state: table): nil
 ---@field focus fun(self: Preview): string|nil
 ---@field resize fun(self: Preview, layout_config: {width: number, height: number, row: number, col: number}): string|nil
 ---@field save_cursor_on_blur fun(self: Preview): nil
+---@field set_active_tab fun(self: Preview, tab_id: string): nil
+---@field get_active_tab fun(self: Preview): string
 ---@field get_window_id fun(self: Preview): number|nil
 ---@field is_valid fun(self: Preview): boolean

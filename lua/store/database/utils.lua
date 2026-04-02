@@ -1,4 +1,3 @@
-local utils = require("store.utils")
 local Path = require("store.plenary.path")
 
 ---@module "store.database.utils"
@@ -6,10 +5,20 @@ local Path = require("store.plenary.path")
 
 local M = {}
 
----Get the cache directory path
+-- Resolve paths once at load time (vim.env/vim.fn can't be called from libuv fast event callbacks)
+local _cache_dir = Path:new(vim.fn.stdpath("cache"), "store.nvim")
+local _tmp_cache_dir = Path:new((vim.env.TMPDIR or vim.env.TMP or vim.env.TEMP or "/tmp"), "store.nvim")
+
+---Get the persistent cache directory path (for db.json, install catalogues)
 ---@return Path cache_dir The cache directory path object
 function M.get_cache_dir()
-  return Path:new(vim.fn.stdpath("cache"), "store.nvim")
+  return _cache_dir
+end
+
+---Get the temporary cache directory path (for READMEs, docs — cleaned by OS on reboot)
+---@return Path tmp_cache_dir The temp cache directory path object
+function M.get_tmp_cache_dir()
+  return _tmp_cache_dir
 end
 
 ---Generate README cache key/filename from repository full_name
@@ -17,6 +26,17 @@ end
 ---@return string key The cache key/filename for the README
 function M.repository_to_readme_key(full_name)
   return full_name:gsub("/", "-") .. ".md"
+end
+
+---Generate doc cache key/filename from repository full_name and doc_path
+---@param full_name string Repository full_name (e.g., "owner/repo")
+---@param doc_path? string Specific doc reference (e.g., "main/doc/help.txt")
+---@return string key The cache key/filename for the doc
+function M.repository_to_doc_key(full_name, doc_path)
+  if not doc_path then
+    return full_name:gsub("/", "-") .. ".txt"
+  end
+  return full_name:gsub("/", "-") .. "--" .. doc_path:gsub("/", "-") .. ".txt"
 end
 
 ---Resolve README branch/path reference into components
@@ -35,118 +55,34 @@ function M.parse_readme_reference(readme)
   return "HEAD", "README.md"
 end
 
----Build GitHub raw URL for README based on repository metadata
----@param full_name string Repository full name
+---Build worker URL for pre-processed README content
+---@param base_url string Worker base URL (e.g., "https://store-nvim-readme.oleksandrp.com")
+---@param source string Repository source ("github" or "gitlab")
+---@param full_name string Repository full name (e.g., "owner/repo")
 ---@param readme string|nil README reference (branch/path)
----@return string url Fully qualified raw README URL
-function M.build_github_readme_url(full_name, readme)
+---@return string url Fully qualified worker README URL
+function M.build_worker_readme_url(base_url, source, full_name, readme)
   local branch, path = M.parse_readme_reference(readme)
+  local owner, repo = full_name:match("^([^/]+)/(.+)$")
+  return string.format("%s/readme/%s/%s/%s/%s/%s", base_url, source, owner, repo, branch, path)
+end
+
+---Build GitHub raw URL for doc file based on repository metadata
+---@param full_name string Repository full name
+---@param doc string|nil Doc reference (branch/path)
+---@return string url Fully qualified raw doc URL
+function M.build_github_doc_url(full_name, doc)
+  local branch, path = M.parse_readme_reference(doc)
   return string.format("https://raw.githubusercontent.com/%s/%s/%s", full_name, branch, path)
 end
 
----Build GitLab raw URL for README based on repository metadata
+---Build GitLab raw URL for doc file based on repository metadata
 ---@param full_name string Repository full name
----@param readme string|nil README reference (branch/path)
----@return string url Fully qualified raw README URL
-function M.build_gitlab_readme_url(full_name, readme)
-  local branch, path = M.parse_readme_reference(readme)
+---@param doc string|nil Doc reference (branch/path)
+---@return string url Fully qualified raw doc URL
+function M.build_gitlab_doc_url(full_name, doc)
+  local branch, path = M.parse_readme_reference(doc)
   return string.format("https://gitlab.com/%s/-/raw/%s/%s?ref_type=heads", full_name, branch, path)
-end
-
--- Process README content optimally: clean HTML tags, filter images, and collapse empty lines
----@param content string Raw README content as string
----@return string[] Processed lines with HTML tags removed, images filtered, and empty lines collapsed
-function M.process_readme_content(content)
-  -- Single regex pass for image removal (combined patterns for better performance)
-  content = content:gsub("<%s*[Ii][Mm][Gg][^>]*/?%s*>", "")
-
-  local lines = vim.split(content, "\n", { plain = true })
-  local result = {}
-  local result_count = 0
-  local in_code_block = false
-  local prev_was_empty = false
-
-  -- Pre-compile pattern to avoid recompilation in loop
-  local code_fence_pattern = "^%s*```"
-
-  for i = 1, #lines do
-    local line = lines[i]
-
-    -- Check for fenced code block markers (```)
-    if line:match(code_fence_pattern) then
-      in_code_block = not in_code_block
-      -- Single gsub operation for trim
-      local trimmed = line:gsub("^%s*(.-)%s*$", "%1")
-      result_count = result_count + 1
-      result[result_count] = trimmed
-      prev_was_empty = false
-    elseif in_code_block then
-      -- Inside code block - preserve original whitespace
-      result_count = result_count + 1
-      result[result_count] = line
-      prev_was_empty = false
-    else
-      -- Outside code block - apply normal processing
-      -- Single trim operation
-      local trimmed = line:gsub("^%s*(.-)%s*$", "%1")
-
-      if trimmed == "" then
-        -- Handle empty lines with collapsing
-        if not prev_was_empty then
-          result_count = result_count + 1
-          result[result_count] = ""
-        end
-        prev_was_empty = true
-      else
-        -- Optimized HTML detection: check for '<' first (cheaper operation)
-        if trimmed:find("<", 1, true) then
-          -- Only run expensive regex if '<' is found
-          if trimmed:match("<%s*[^>]*>") then
-            trimmed = utils.strip_html_tags(trimmed)
-            -- Re-check if empty after HTML removal
-            if trimmed == "" then
-              if not prev_was_empty then
-                result_count = result_count + 1
-                result[result_count] = ""
-              end
-              prev_was_empty = true
-            else
-              result_count = result_count + 1
-              result[result_count] = trimmed
-              prev_was_empty = false
-            end
-          else
-            result_count = result_count + 1
-            result[result_count] = trimmed
-            prev_was_empty = false
-          end
-        else
-          result_count = result_count + 1
-          result[result_count] = trimmed
-          prev_was_empty = false
-        end
-      end
-    end
-  end
-
-  -- Strip leading empty lines
-  local start_idx = 1
-  while start_idx <= result_count and result[start_idx] == "" do
-    start_idx = start_idx + 1
-  end
-
-  if start_idx > result_count then
-    -- All lines were empty
-    return {}
-  end
-
-  -- Create final result array
-  local final_result = {}
-  for i = start_idx, result_count do
-    final_result[i - start_idx + 1] = result[i]
-  end
-
-  return final_result
 end
 
 return M

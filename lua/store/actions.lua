@@ -1,6 +1,7 @@
 local help = require("store.ui.help")
 local event_handlers = require("store.ui.store_modal.event_handlers")
 local database = require("store.database")
+local telemetry = require("store.telemetry")
 local sort = require("store.sort")
 local filter = require("store.ui.filter")
 local sort_select = require("store.ui.sort_select")
@@ -46,11 +47,11 @@ function M.filter(instance)
         logger.debug("Filter cleared, showing all " .. #instance.state.repos .. " repositories")
         instance.state.currently_displayed_repos = vim.tbl_extend("force", {}, instance.state.repos)
         -- sort only if custom sort
-        if instance.state.sort_config.type ~= "default" then
+        if instance.state.sort_config.type ~= "recently_updated" then
           logger.debug("Sorting " .. #instance.state.currently_displayed_repos .. " filtered repositories")
           local err = utils.sort(
             instance.state.currently_displayed_repos,
-            instance.state.installed_items,
+            { installed_items = instance.state.installed_items, download_stats_monthly = instance.state.download_stats_monthly, download_stats_weekly = instance.state.download_stats_weekly, view_stats_monthly = instance.state.view_stats_monthly, view_stats_weekly = instance.state.view_stats_weekly },
             instance.state.sort_config.type
           )
           if err ~= nil then
@@ -79,9 +80,18 @@ function M.filter(instance)
         logger.warn("Failed to re-render heading after filter: " .. error)
       end
 
-      error = instance.list:render({ items = instance.state.currently_displayed_repos })
+      error = instance.list:render({
+        items = instance.state.currently_displayed_repos,
+        sort_type = instance.state.sort_config.type,
+        download_stats_monthly = instance.state.download_stats_monthly,
+        view_stats_monthly = instance.state.view_stats_monthly,
+      })
       if error ~= nil then
         logger.warn("Failed to re-render list after filter: " .. error)
+      end
+
+      if instance.layout_provider then
+        instance.layout_provider:update_winbar(instance.list, instance.preview)
       end
     end,
     on_exit = function()
@@ -144,22 +154,6 @@ function M.open(instance)
   end
 end
 
-function M.switch_focus(instance)
-  logger.debug("Action: switch focus from " .. instance.state.current_focus)
-  if instance.list:get_window_id() == instance.state.current_focus then
-    instance.preview:focus()
-    instance.state.current_focus = instance.preview:get_window_id()
-    return
-  end
-  if instance.preview:get_window_id() == instance.state.current_focus then
-    instance.preview:save_cursor_on_blur()
-    instance.list:focus()
-    instance.state.current_focus = instance.list:get_window_id()
-    return
-  end
-  logger.warn("Unknown focus: " .. instance.state.current_focus)
-end
-
 function M.sort(instance)
   logger.debug("Action: sort")
   local previous_focus = instance.state.current_focus
@@ -175,10 +169,10 @@ function M.sort(instance)
     on_value = function(selected_sort)
       -- there are 5 cases possible:
       -- 0. sort not changed - do nothing
-      -- 1. no filter + default sort = use db data
-      -- 2. filter + default sort = filter db data
-      -- 3. no filter + custom sort = sort curr filtered list
-      -- 4. filter + custom sort = sort curr filtered list
+      -- 1. no filter + recently_updated sort = use db data
+      -- 2. filter + recently_updated sort = filter db data
+      -- 3. no filter + other sort = sort curr filtered list
+      -- 4. filter + other sort = sort curr filtered list
 
       -- case 0
       if instance.state.sort_config.type == selected_sort then
@@ -188,12 +182,12 @@ function M.sort(instance)
       logger.debug("Applying sort: " .. selected_sort)
 
       -- case 1
-      if selected_sort == "default" and instance.state.filter_query == "" then
+      if selected_sort == "recently_updated" and instance.state.filter_query == "" then
         instance.state.currently_displayed_repos = vim.tbl_extend("force", {}, instance.state.repos)
       end
 
       -- case 2
-      if selected_sort == "default" and instance.state.filter_query ~= "" then
+      if selected_sort == "recently_updated" and instance.state.filter_query ~= "" then
         local filtered, err = utils.filter(instance.state.repos, instance.state.filter_query)
         if err ~= nil then
           logger.error("Failed to filter repositories: " .. err)
@@ -203,7 +197,7 @@ function M.sort(instance)
       end
 
       -- case 3, 4
-      if selected_sort ~= "default" then
+      if selected_sort ~= "recently_updated" then
         logger.debug("Sorting " .. #instance.state.currently_displayed_repos .. " filtered(?) repositories")
         local sorting = sort.sorts[selected_sort]
         if not sorting then
@@ -211,7 +205,7 @@ function M.sort(instance)
           return
         end
         table.sort(instance.state.currently_displayed_repos, function(a, b)
-          return sorting.fn(a, b, instance.state.installed_items)
+          return sorting.fn(a, b, { installed_items = instance.state.installed_items, download_stats_monthly = instance.state.download_stats_monthly, download_stats_weekly = instance.state.download_stats_weekly, view_stats_monthly = instance.state.view_stats_monthly, view_stats_weekly = instance.state.view_stats_weekly })
         end)
       end
 
@@ -225,9 +219,12 @@ function M.sort(instance)
 
       local list_error = instance.list:render({
         items = instance.state.currently_displayed_repos,
+        sort_type = selected_sort,
+        download_stats_monthly = instance.state.download_stats_monthly,
+        view_stats_monthly = instance.state.view_stats_monthly,
       })
       if list_error ~= nil then
-        logger.warn("Failed to render heading after sort: " .. heading_error)
+        logger.warn("Failed to render list after sort: " .. list_error)
       end
       logger.debug("Sort operation completed")
     end,
@@ -252,112 +249,92 @@ function M.sort(instance)
   end
 end
 
-function M.install(instance)
-  logger.debug("Action: install")
+function M.switch_list(instance)
+  logger.debug("Action: switch to list tab")
+  if instance.preview:get_window_id() == instance.state.current_focus then
+    instance.preview:save_cursor_on_blur()
+  end
+  instance.list:set_active_tab("list")
+  instance.list:focus()
+  instance.state.current_focus = instance.list:get_window_id()
+end
+
+function M.switch_install(instance)
+  logger.debug("Action: switch to install tab")
+  if instance.preview:get_window_id() == instance.state.current_focus then
+    instance.preview:save_cursor_on_blur()
+  end
   local repo = instance.state.current_repository
-  if not repo then
-    logger.warn("No repository selected")
-    return
+  if repo then
+    local telemetry = package.loaded["store.telemetry"]
+    if telemetry then telemetry.track("view", repo.full_name) end
   end
+  local snippet = instance.state.install_catalogue and repo and instance.state.install_catalogue[repo.full_name]
+  instance.list:render_install(repo, snippet, instance.state.plugin_manager_mode)
+  instance.list:set_active_tab("install")
+  instance.list:focus()
+  instance.state.current_focus = instance.list:get_window_id()
+end
 
-  local manager = instance.state.plugin_manager_mode
-  if not manager or manager == "" or manager == "not-selected" then
-    logger.warn("Plugin manager not detected; cannot prepare install snippet")
-    plugin_utils.tryNotify("store.nvim: Could not determine plugin manager for installation", vim.log.levels.WARN)
-    return
-  end
-
-  local catalogue = instance.state.install_catalogue
-  if not catalogue or type(catalogue) ~= "table" then
-    local message = "Install catalogue is not available for " .. manager
-    logger.warn(message)
-    plugin_utils.tryNotify("store.nvim: " .. message, vim.log.levels.WARN)
-    return
-  end
-
-  local snippet = catalogue[repo.full_name]
-  if not snippet then
-    local message = "Install snippet not available for " .. repo.full_name .. " (" .. manager .. ")"
-    logger.warn(message)
-    plugin_utils.tryNotify("store.nvim: " .. message, vim.log.levels.WARN)
-    return
-  end
-
-  -- Phase 1: Show confirmation popup
-  local install_modal = require("store.ui.install_modal")
-  local component, err = install_modal.new({
-    repository = repo,
-    snippet = snippet,
-    on_confirm = function(data)
-      -- Use the edited configuration and filepath from the popup
-      local filepath = vim.fn.expand(data.filepath)
-      local dir = vim.fn.fnamemodify(filepath, ":h")
-      local filename = vim.fn.fnamemodify(filepath, ":t")
-
-      local file_exists = vim.fn.filereadable(filepath) == 1
-
-      -- Handle existing file - append strategy
-      if file_exists then
-        local file = io.open(filepath, "a")
-        if not file then
-          logger.error("Failed to open existing file for append: " .. filepath)
-          return
-        end
-
-        file:write("\n\n-- Plugin: " .. repo.full_name .. "\n")
-        file:write("-- Added by store.nvim on " .. os.date("%Y-%m-%d %H:%M:%S") .. "\n")
-        file:write(data.config)
-        file:close()
-
-        logger.info("Plugin appended: " .. repo.full_name .. " to " .. filepath)
-        plugin_utils.tryNotify("Plugin '" .. repo.full_name .. "' appended to " .. filename)
-        if manager == "lazy.nvim" then
-          plugin_utils.tryNotify("Run :Lazy sync to complete installation")
-        else
-          plugin_utils.tryNotify("Restart Neovim or re-source your config to load vim.pack changes")
-        end
-        return
-      end
-
-      -- Handle new file - create strategy
-      if vim.fn.isdirectory(dir) == 0 then
-        vim.fn.mkdir(dir, "p")
-      end
-
-      local file = io.open(filepath, "w")
-      if not file then
-        logger.error("Failed to create plugin file: " .. filepath)
-        return
-      end
-
-      file:write("-- Plugin: " .. repo.full_name .. "\n")
-      file:write("-- Installed via store.nvim\n")
-      file:write("\n")
-      file:write(data.config)
-      file:close()
-
-      logger.info("Plugin installed: " .. repo.full_name .. " at " .. filepath)
-      plugin_utils.tryNotify("Plugin '" .. repo.full_name .. "' configuration created at " .. filepath)
-      if manager == "lazy.nvim" then
-        plugin_utils.tryNotify("Run :Lazy sync to complete installation")
+function M.switch_readme(instance)
+  logger.debug("Action: switch to readme tab")
+  instance.preview:set_active_tab("readme")
+  instance.preview:focus()
+  instance.state.current_focus = instance.preview:get_window_id()
+  local repo = instance.state.current_repository
+  if repo then
+    local telemetry = package.loaded["store.telemetry"]
+    if telemetry then telemetry.track("view", repo.full_name) end
+    database.get_readme(repo, function(content, error)
+      if error then
+        instance.preview:render({ state = "error", content = { error } })
       else
-        plugin_utils.tryNotify("Restart Neovim or re-source your config to load vim.pack changes")
+        instance.preview:render({ state = "ready", content = content, readme_id = repo.full_name })
       end
-    end,
-    on_cancel = function()
-      logger.info("Installation cancelled")
-    end,
-  })
+    end)
+  end
+end
 
-  if err then
-    logger.warn("Failed to create confirm install component: " .. err)
-    return
+function M.switch_docs(instance)
+  logger.debug("Action: switch/cycle docs")
+  local repo = instance.state.current_repository
+  if not repo or not repo.doc or #repo.doc == 0 then
+    return -- no docs available, silently ignore
   end
 
-  local open_err = component:open()
-  if open_err then
-    logger.warn("Failed to open confirm install popup: " .. open_err)
+  local preview = instance.preview
+  local current_tab = preview:get_active_tab()
+
+  if current_tab == "docs" then
+    -- Cycle to next doc (wrap around)
+    local next_index = (preview.state.doc_index % #repo.doc) + 1
+    preview.state.doc_index = next_index
+  else
+    -- Switch from readme to docs, show first doc
+    preview.state.doc_index = 1
+    preview:set_active_tab("docs")
   end
+
+  -- Update tab labels immediately (shows counter before fetch completes)
+  preview:update_doc_label()
+
+  -- Fetch and render the selected doc
+  local doc_path = repo.doc[preview.state.doc_index]
+  preview:render_docs({ state = "loading" })
+
+  instance.preview:focus()
+  instance.state.current_focus = instance.preview:get_window_id()
+
+  local telemetry = package.loaded["store.telemetry"]
+  if telemetry then telemetry.track("view", repo.full_name) end
+
+  database.get_doc(repo, doc_path, function(content, error)
+    if error then
+      instance.preview:render_docs({ state = "error", content = { error } })
+    else
+      instance.preview:render_docs({ state = "ready", content = content, docs_id = repo.full_name .. "::" .. doc_path })
+    end
+  end)
 end
 
 function M.reset(instance)
@@ -384,6 +361,18 @@ function M.reset(instance)
       event_handlers.on_installed_plugins(instance, installed_data, mode, installed_err, overview)
     end
   )
+
+  -- Clear and re-fetch stats (both periods)
+  instance.state.download_stats_monthly = nil
+  instance.state.download_stats_weekly = nil
+  instance.state.view_stats_monthly = nil
+  instance.state.view_stats_weekly = nil
+  telemetry.fetch_stats("month", function(data, err)
+    event_handlers.on_stats(instance, "month", data, err)
+  end)
+  telemetry.fetch_stats("week", function(data, err)
+    event_handlers.on_stats(instance, "week", data, err)
+  end)
 end
 
 function M.hover(instance)
@@ -395,7 +384,14 @@ function M.hover(instance)
   end
 
   local hover = require("store.ui.hover")
-  local component, err = hover.new({ repository = repo })
+  local full_name = repo.full_name
+  local component, err = hover.new({
+    repository = repo,
+    download_stats_weekly = instance.state.download_stats_weekly and instance.state.download_stats_weekly[full_name],
+    download_stats_monthly = instance.state.download_stats_monthly and instance.state.download_stats_monthly[full_name],
+    view_stats_weekly = instance.state.view_stats_weekly and instance.state.view_stats_weekly[full_name],
+    view_stats_monthly = instance.state.view_stats_monthly and instance.state.view_stats_monthly[full_name],
+  })
   if err then
     logger.warn("Failed to create hover component: " .. err)
     return

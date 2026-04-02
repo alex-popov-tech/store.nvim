@@ -4,10 +4,11 @@ local keymaps = require("store.keymaps")
 local sort = require("store.sort")
 
 ---@class UserConfig
+---@field layout? string Layout mode: "modal" (floating windows) or "tab" (native splits in tab page). Default: "modal"
 ---@field width? number Window width (0.0-1.0 as percentage of screen width)
 ---@field height? number Window height (0.0-1.0 as percentage of screen height)
 ---@field proportions? {list: number, preview: number} Layout proportions for panes (0.0-1.0)
----@field keybindings? {help: string[], close: string[], filter: string[], reset: string[], open: string[], switch_focus: string[], sort: string[], install: string[], hover: string[]} Key binding configuration
+---@field keybindings? {help: string[], close: string[], filter: string[], reset: string[], open: string[], sort: string[], hover: string[], switch_list: string[], switch_install: string[], switch_readme: string[], switch_docs: string[]} Key binding configuration
 ---@field preview_debounce? number Debounce delay for preview updates (ms)
 ---@field logging? string Logging level: "off"|"error"|"warn"|"info"|"debug" (default: "off")
 ---@field repository_renderer? RepositoryRenderer Function to render repository data for list display
@@ -16,13 +17,15 @@ local sort = require("store.sort")
 ---@field plugins_folder? string Absolute path to plugins folder (defaults to ~/.config/nvim/lua/plugins)
 ---@field install_catalogue_urls? table<string, string> Mapping of plugin manager identifiers to catalogue URLs
 ---@field plugin_manager? string Preferred plugin manager selection ("not-selected"|"lazy.nvim"|"vim.pack")
+---@field readme_cache_url? string Base URL for README cache worker (pre-processes and caches READMEs)
 ---@field telemetry? boolean Send anonymous usage counts (default: true)
 
 ---@class UserConfigWithDefaults
+---@field layout string Layout mode: "modal" or "tab"
 ---@field width number Window width (0.0-1.0 as percentage of screen width)
 ---@field height number Window height (0.0-1.0 as percentage of screen height)
 ---@field proportions {list: number, preview: number} Layout proportions for panes (0.0-1.0)
----@field keybindings {help: string[], close: string[], filter: string[], reset: string[], open: string[], switch_focus: string[], sort: string[], install: string[], hover: string[]} Key binding configuration
+---@field keybindings {help: string[], close: string[], filter: string[], reset: string[], open: string[], sort: string[], hover: string[], switch_list: string[], switch_install: string[], switch_readme: string[], switch_docs: string[]} Key binding configuration
 ---@field preview_debounce number Debounce delay for preview updates (ms)
 ---@field data_source_url string URL for fetching plugin data
 ---@field logging string Logging level: "off"|"error"|"warn"|"info"|"debug" (default: "off")
@@ -32,6 +35,7 @@ local sort = require("store.sort")
 ---@field plugins_folder? string Absolute path to plugins folder (defaults to ~/.config/nvim/lua/plugins)
 ---@field install_catalogue_urls table<string, string>
 ---@field plugin_manager string Preferred plugin manager selection
+---@field readme_cache_url string Base URL for README cache worker
 ---@field telemetry boolean Send anonymous usage counts (default: true)
 
 ---@class ComponentLayout
@@ -62,15 +66,106 @@ local M = {}
 ---@type PluginConfig|nil
 local plugin_config = nil
 
+local HEADER_HEIGHT = 5
+
+-- Calculate tab-mode layout dimensions from screen size (includes popup layouts)
+---@param config table Configuration with proportions and keybindings
+---@return table layout Layout with header/list/preview/filter/sort/help sub-tables
+local function calculate_tab_layout(config)
+  local screen_width = vim.o.columns
+  local screen_height = vim.o.lines
+  local list_width = math.floor(screen_width * config.proportions.list)
+  local preview_width = screen_width - list_width
+  local content_height = screen_height - HEADER_HEIGHT
+
+  -- Filter popup: sized to fit hints content, single line + hints below
+  local filter_width = 52
+  local filter_height = 1
+  local filter_hints_height = 11
+  local filter_combo_height = filter_height + 2 + filter_hints_height + 2 - 1 -- borders, overlapping separator
+  local filter_combo_row = math.floor((screen_height - filter_combo_height) / 2)
+
+  -- Sort popup: dimensions from sort module
+  local sort_types = sort.get_sort_types()
+  local sort_lines_count = #sort_types
+  local sort_longest_line = 0
+  local checkmark_space = 2
+  for _, sort_type in ipairs(sort_types) do
+    local label = sort.sorts[sort_type].label
+    sort_longest_line = math.max(sort_longest_line, checkmark_space + vim.fn.strchars(label))
+  end
+  local sort_width = sort_longest_line + 4
+  local sort_height = sort_lines_count
+
+  -- Help popup: dimensions from keybindings
+  local help_lines_count = 4 -- empty line + header + separator + empty line
+  local max_keybinding_length = 3
+  local max_label_length = 6
+  for action, keys in pairs(config.keybindings) do
+    help_lines_count = help_lines_count + 1
+    local joined_keys = table.concat(keys, " / ")
+    max_keybinding_length = math.max(max_keybinding_length, vim.fn.strchars(joined_keys))
+    local label = keymaps.get_label(action)
+    if label then
+      max_label_length = math.max(max_label_length, vim.fn.strchars(label))
+    end
+  end
+  -- Markdown table: | `key` | action |
+  -- Chrome: "| `" (3) + "` | " (4) + " |" (2) = 9
+  local help_width = max_keybinding_length + max_label_length + 9
+  local help_height = help_lines_count
+
+  return {
+    header = {
+      width = screen_width,
+      height = HEADER_HEIGHT,
+      row = 0,
+      col = 0,
+    },
+    list = {
+      width = list_width,
+      height = content_height,
+      row = 0,
+      col = 0,
+    },
+    preview = {
+      width = preview_width,
+      height = content_height,
+      row = 0,
+      col = 0,
+    },
+    filter = {
+      width = filter_width,
+      height = filter_height,
+      row = filter_combo_row,
+      col = math.floor((screen_width - filter_width) / 2),
+      hints_row = filter_combo_row + filter_height + 1,
+      hints_col = math.floor((screen_width - filter_width) / 2),
+      hints_height = filter_hints_height,
+    },
+    sort = {
+      width = sort_width,
+      height = sort_height,
+      row = math.floor((screen_height - sort_height) / 2),
+      col = math.floor((screen_width - sort_width) / 2),
+    },
+    help = {
+      width = help_width,
+      height = help_height,
+      row = math.floor((screen_height - help_height) / 2),
+      col = math.floor((screen_width - help_width) / 2),
+    },
+  }
+end
+
 -- Calculate all layout dimensions and return complete layout
 ---@param config table Configuration with width, height, proportions, and keybindings
 ---@return StoreModalLayout|nil layout Complete layout if calculation succeeded, nil if failed
 ---@return string|nil error Error message if calculation failed
 local function calculate_complete_layout(config)
-  -- Calculate filter dimensions: half width of main modal, single line
+  -- Calculate filter dimensions: sized to fit hints content, single line
   local screen_width = vim.o.columns
-  local main_modal_width = math.floor(screen_width * config.width)
-  local filter_width = math.floor(main_modal_width / 2)
+  local filter_width = 52
   local filter_height = 1
 
   -- Calculate sort dimensions from sort module
@@ -86,15 +181,14 @@ local function calculate_complete_layout(config)
   end
 
   -- Calculate help dimensions from keybindings and labels
-  local help_lines_count = 2 -- header + separator
+  local help_lines_count = 4 -- empty line + header + separator + empty line
   local max_keybinding_length = 3 -- minimum for "Key" header
   local max_label_length = 6 -- minimum for "Action" header
 
   for action, keys in pairs(config.keybindings) do
-    help_lines_count = help_lines_count + #keys
-    for _, key in ipairs(keys) do
-      max_keybinding_length = math.max(max_keybinding_length, vim.fn.strchars(key))
-    end
+    help_lines_count = help_lines_count + 1
+    local joined_keys = table.concat(keys, " / ")
+    max_keybinding_length = math.max(max_keybinding_length, vim.fn.strchars(joined_keys))
     local label = keymaps.get_label(action)
     if not label then
       return nil, "No label found for action '" .. action .. "'"
@@ -102,8 +196,8 @@ local function calculate_complete_layout(config)
     max_label_length = math.max(max_label_length, vim.fn.strchars(label))
   end
 
-  local column_spacing = 2
-  local help_longest_line = max_keybinding_length + column_spacing + max_label_length
+  -- Markdown table: | `key` | action |
+  local help_longest_line = max_keybinding_length + max_label_length + 9
 
   -- Calculate complete layout
   return utils.calculate_layout({
@@ -126,40 +220,61 @@ local function calculate_complete_layout(config)
   })
 end
 
----Default repository renderer that mimics the original behavior
+---Default repository renderer with dynamic column layout based on sort type
 ---@param repo Repository Repository data to render
----@param isInstalled boolean Whether the repository is installed
+---@param opts RendererOpts Renderer options (is_installed, sort_type, downloads, views)
 ---@return RepositoryField[] fields Array of field data for display
-local function default_repository_renderer(repo, isInstalled)
+local function default_repository_renderer(repo, opts)
+  local sort_type = opts.sort_type
+  local tags = repo.tags and #repo.tags > 0 and table.concat(repo.tags, ", ") or ""
+
+  -- Non-date sorts (excluding most_stars) → Stars | Icon+Value | Name | Desc | Tags
+  if sort_type == "most_downloads_monthly" then
+    return {
+      { content = "⭐" .. repo.pretty.stars, limit = 10 },
+      { content = "📥 " .. tostring(opts.downloads), limit = 10 },
+      { content = repo.name, limit = 25 },
+      { content = repo.description, limit = 150 },
+      { content = tags, limit = 100 },
+    }
+  elseif sort_type == "most_views_monthly" then
+    return {
+      { content = "⭐" .. repo.pretty.stars, limit = 10 },
+      { content = "👀 " .. tostring(opts.views), limit = 10 },
+      { content = repo.name, limit = 25 },
+      { content = repo.description, limit = 150 },
+      { content = tags, limit = 100 },
+    }
+  elseif sort_type == "rising_stars_monthly" then
+    return {
+      { content = "⭐" .. repo.pretty.stars, limit = 10 },
+      { content = "🚀 +" .. tostring(repo.stars.monthly or 0), limit = 10 },
+      { content = repo.name, limit = 25 },
+      { content = repo.description, limit = 150 },
+      { content = tags, limit = 100 },
+    }
+  elseif sort_type == "rising_stars_weekly" then
+    return {
+      { content = "⭐" .. repo.pretty.stars, limit = 10 },
+      { content = "🚀 +" .. tostring(repo.stars.weekly or 0), limit = 10 },
+      { content = repo.name, limit = 25 },
+      { content = repo.description, limit = 150 },
+      { content = tags, limit = 100 },
+    }
+  end
+
   return {
-    {
-      content = isInstalled and "🏠" or " ",
-      limit = 2,
-    },
-    {
-      content = "⭐" .. repo.pretty.stars,
-      limit = 10,
-    },
-    {
-      content = repo.full_name,
-      limit = 35,
-    },
-    {
-      content = "Last updated " .. repo.pretty.updated_at,
-      limit = 30,
-    },
-    {
-      content = repo.tags and #repo.tags > 0 and table.concat(repo.tags, ", ") or "",
-      limit = 100,
-    },
-    {
-      content = repo.description,
-      limit = 100,
-    },
+    { content = "⭐" .. repo.pretty.stars, limit = 10 },
+    { content = repo.name, limit = 25 },
+    { content = repo.description, limit = 150 },
+    { content = tags, limit = 100 },
   }
 end
 
 local DEFAULT_USER_CONFIG = {
+  -- Layout mode: "modal" (floating windows) or "tab" (native splits in tab page)
+  layout = "modal",
+
   -- Main window dimensions as percentage of the editor
   width = 0.8, -- 80% of screen width
   height = 0.8, -- 80% of screen height
@@ -173,24 +288,27 @@ local DEFAULT_USER_CONFIG = {
   -- Keybindings configuration
   keybindings = {
     help = { "?" },
-    close = { "q", "<esc>", "<c-c>" },
-    filter = { "f" },
-    reset = { "r" },
-    open = { "<cr>", "o" },
-    switch_focus = { "<tab>", "<s-tab>" },
-    sort = { "s" },
-    install = { "i" },
+    close = { "q", "Q", "<c-c>" },
+    filter = { "F" },
+    reset = { "<leader>r" },
+    open = { "<cr>", "O" },
+    sort = { "S" },
     hover = { "K" },
+    switch_list = { "L" },
+    switch_install = { "I" },
+    switch_readme = { "R" },
+    switch_docs = { "D" },
   },
 
   -- Behavior
-  preview_debounce = 50, -- ms delay for preview updates
+  preview_debounce = 100, -- ms delay for preview updates
   data_source_url = "https://github.com/alex-popov-tech/store.nvim.crawler/releases/latest/download/db_minified.json", -- URL for plugin data
   install_catalogue_urls = {
     ["lazy.nvim"] = "https://github.com/alex-popov-tech/store.nvim.crawler/releases/latest/download/lazy_db_minified.json",
     ["vim.pack"] = "https://github.com/alex-popov-tech/store.nvim.crawler/releases/latest/download/vimpack_db_minified.json",
   },
   plugin_manager = "not-selected",
+  readme_cache_url = "https://store-nvim-readme.oleksandrp.com",
 
   -- Logging
   logging = "warn",
@@ -222,6 +340,17 @@ local DEFAULT_USER_CONFIG = {
 local function validate_config(config)
   if not config then
     return nil
+  end
+
+  if config.layout ~= nil then
+    local err = validators.should_be_string(config.layout, "layout must be a string")
+    if err then
+      return err
+    end
+    local valid_layouts = { modal = true, tab = true }
+    if not valid_layouts[config.layout] then
+      return "layout must be one of: modal, tab"
+    end
   end
 
   if config.width ~= nil then
@@ -362,6 +491,17 @@ local function validate_config(config)
     end
   end
 
+  if config.readme_cache_url ~= nil then
+    local err = validators.should_be_string(config.readme_cache_url, "readme_cache_url must be a string")
+    if err then
+      return err
+    end
+
+    if not config.readme_cache_url:match("^https?://") then
+      return "readme_cache_url must be a valid HTTP(S) URL"
+    end
+  end
+
   if config.keybindings ~= nil then
     local err = validators.should_be_table(config.keybindings, "keybindings must be a table")
     if err then
@@ -485,13 +625,24 @@ function M.setup(user_config)
     return "Store.nvim configuration error: " .. error_msg
   end
 
-  local computed_layout, layout_error = calculate_complete_layout(merged_config)
-  if layout_error then
-    return "Store.nvim layout calculation error: " .. layout_error
+  -- Preserve user's layout mode before computed layout overwrites it
+  local layout_mode = merged_config.layout
+
+  -- Compute layout dimensions for the selected mode
+  local computed_layout
+  if layout_mode == "tab" then
+    computed_layout = calculate_tab_layout(merged_config)
+  else
+    local layout_error
+    computed_layout, layout_error = calculate_complete_layout(merged_config)
+    if layout_error then
+      return "Store.nvim layout calculation error: " .. layout_error
+    end
   end
 
   plugin_config = vim.tbl_deep_extend("force", merged_config, {
     layout = computed_layout,
+    layout_mode = layout_mode,
   })
 
   return nil
@@ -517,11 +668,14 @@ function M.update_layout(proportions)
     proportions = proportions,
   })
 
-  -- Calculate complete layout with new proportions
-  local new_layout, layout_error = calculate_complete_layout(config_with_new_proportions)
-
-  if layout_error ~= nil then
-    return nil, layout_error
+  local new_layout, layout_error
+  if config.layout_mode == "tab" then
+    new_layout = calculate_tab_layout(config_with_new_proportions)
+  else
+    new_layout, layout_error = calculate_complete_layout(config_with_new_proportions)
+    if layout_error ~= nil then
+      return nil, layout_error
+    end
   end
 
   plugin_config.proportions = proportions

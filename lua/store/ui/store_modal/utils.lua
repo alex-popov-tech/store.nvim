@@ -5,12 +5,12 @@ local M = {}
 
 ---Apply sorting to current filtered repositories
 ---@param repos Repository[] Repositories for sorting
----@param installed_items table Installed plugins by full_name
+---@param ctx table Sort context { installed_items, download_stats_monthly, download_stats_weekly, view_stats_monthly, view_stats_weekly }
 ---@param sort_type string Sort type to apply
 ---@return string? error
-function M.sort(repos, installed_items, sort_type)
-  if sort_type == "default" then
-    return "Cannot apply default sort, initial table should be used with optional filtering"
+function M.sort(repos, ctx, sort_type)
+  if sort_type == "recently_updated" then
+    return "Cannot apply recently_updated sort, initial table should be used with optional filtering"
   end
 
   local sorting_func = sort.sorts[sort_type]
@@ -19,7 +19,7 @@ function M.sort(repos, installed_items, sort_type)
   end
 
   table.sort(repos, function(a, b)
-    return sorting_func.fn(a, b, installed_items)
+    return sorting_func.fn(a, b, ctx)
   end)
 end
 

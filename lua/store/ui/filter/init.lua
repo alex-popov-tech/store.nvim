@@ -12,9 +12,46 @@ local DEFAULT_FILTER_CONFIG = {
 local DEFAULT_STATE = {
   win_id = nil,
   buf_id = nil,
+  hints_win_id = nil,
+  hints_buf_id = nil,
   is_open = false,
   state = "loading",
 }
+
+---Generate static hint content lines for the filter hints window
+---@param width number Window content width
+---@return string[] Array of content lines
+local function create_hints_content(width)
+  local gap = 6 -- space between label column and example column
+  local label_width = 16 -- longest label: "Combined (use ;)"
+  local content_width = label_width + gap + 26 -- 26 = longest example
+
+  local left_pad = math.max(2, math.floor((width - content_width) / 2))
+  local example_col = left_pad + label_width + gap
+
+  local function pad(label, example)
+    local line = string.rep(" ", left_pad) .. label
+    local padding = example_col - #line
+    if padding > 0 then
+      line = line .. string.rep(" ", padding)
+    end
+    return line .. example
+  end
+
+  return {
+    "",
+    pad("Basic search", "telescope"),
+    pad("", "nvim-lua/plenary"),
+    "",
+    pad("Field-specific", "author:folke"),
+    pad("", "name:telescope"),
+    pad("", "description:fuzzy finder"),
+    pad("", "tag:lsp,completion"),
+    "",
+    pad("Combined (use ;)", "telescope;tag:fuzzy,finder"),
+    "",
+  }
+end
 
 -- Filter class
 local Filter = {}
@@ -198,7 +235,8 @@ function Filter:open()
   end
 
   -- Create window
-  local store_config = require("store.config")
+  local store_config = package.loaded["store.config"]
+  if not store_config then return "Filter: store.config not loaded" end
   local plugin_config = store_config.get()
 
   local win_id, win_error = utils.create_floating_window({
@@ -210,7 +248,7 @@ function Filter:open()
       row = self.config.row,
       col = self.config.col,
       style = "minimal",
-      border = "rounded",
+      border = { "╭", "─", "╮", "│", "┤", "─", "├", "│" },
       zindex = plugin_config.zindex.popup,
     },
     focus = true,
@@ -228,11 +266,66 @@ function Filter:open()
   self.state.is_open = true
   self.state.state = "ready"
 
+  -- Create hints window below the filter input
+  local hints_error = self:_open_hints(plugin_config)
+  if hints_error then
+    logger.warn("Failed to open filter hints: " .. hints_error)
+  end
+
   -- Start in insert mode at end of line
   if vim.api.nvim_win_is_valid(win_id) then
     vim.api.nvim_win_set_cursor(win_id, { 1, #self.config.current_query })
     vim.cmd("startinsert!")
   end
+
+  return nil
+end
+
+---Open the hints window below the filter input
+---@param plugin_config table Plugin configuration
+---@return string|nil Error message or nil on success
+function Filter:_open_hints(plugin_config)
+  local hints_content = create_hints_content(self.config.width)
+
+  local hints_buf_id = utils.create_scratch_buffer({
+    buftype = "nofile",
+    modifiable = true,
+  })
+  if not hints_buf_id then
+    return "Failed to create hints buffer"
+  end
+
+  vim.api.nvim_buf_set_lines(hints_buf_id, 0, -1, false, hints_content)
+  vim.bo[hints_buf_id].modifiable = false
+
+  local hints_win_id, hints_win_error = utils.create_floating_window({
+    buf_id = hints_buf_id,
+    config = {
+      relative = "editor",
+      width = self.config.width,
+      height = self.config.hints_height or #hints_content,
+      row = self.config.hints_row,
+      col = self.config.hints_col or self.config.col,
+      style = "minimal",
+      border = { "├", "─", "┤", "│", "╯", "─", "╰", "│" },
+      focusable = false,
+      zindex = plugin_config.zindex.popup,
+    },
+    focus = false,
+  })
+
+  if hints_win_error then
+    vim.api.nvim_buf_delete(hints_buf_id, { force = true })
+    return "Hints window creation failed: " .. hints_win_error
+  end
+
+  -- Apply dimmed highlight to the hints window
+  if hints_win_id and vim.api.nvim_win_is_valid(hints_win_id) then
+    vim.wo[hints_win_id].winhl = "Normal:Comment"
+  end
+
+  self.state.hints_win_id = hints_win_id
+  self.state.hints_buf_id = hints_buf_id
 
   return nil
 end
@@ -247,19 +340,31 @@ function Filter:close()
   -- Store references before cleanup to prevent race conditions
   local win_id = self.state.win_id
   local buf_id = self.state.buf_id
+  local hints_win_id = self.state.hints_win_id
+  local hints_buf_id = self.state.hints_buf_id
 
   -- Clean up state immediately to prevent multiple calls
   self.state.win_id = nil
   self.state.buf_id = nil
+  self.state.hints_win_id = nil
+  self.state.hints_buf_id = nil
   self.state.is_open = false
   self.state.state = "loading"
 
-  -- Close window
+  -- Close hints window
+  if hints_win_id and vim.api.nvim_win_is_valid(hints_win_id) then
+    vim.api.nvim_win_close(hints_win_id, true)
+  end
+  if hints_buf_id and vim.api.nvim_buf_is_valid(hints_buf_id) then
+    vim.api.nvim_buf_delete(hints_buf_id, { force = true })
+  end
+
+  -- Close filter window
   if win_id and vim.api.nvim_win_is_valid(win_id) then
     vim.api.nvim_win_close(win_id, true)
   end
 
-  -- Close buffer
+  -- Close filter buffer
   if buf_id and vim.api.nvim_buf_is_valid(buf_id) then
     vim.api.nvim_buf_delete(buf_id, { force = true })
   end

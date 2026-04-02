@@ -28,9 +28,12 @@ Open the with:
 
 ```lua
 require("store").setup({
-  -- Main window dimensions
-  width = 0.8, -- 80% of screen width
-  height = 0.8, -- 80% of screen height
+  -- Layout mode: "modal" (floating) or "tab" (native splits)
+  layout = "modal",
+
+  -- Main window dimensions (percentage of screen, 0.0-1.0)
+  width = 0.8,
+  height = 0.8,
 
   -- Window layout proportions (must sum to 1.0)
   proportions = {
@@ -38,77 +41,43 @@ require("store").setup({
     preview = 0.5,
   },
 
-  -- Keybindings configuration
-  keybindings = {
-    help = { "?" },
-    close = { "q", "<esc>", "<c-c>" },
-    filter = { "f" },
-    reset = { "r" },
-    open = { "<cr>", "o" },
-    switch_focus = { "<tab>", "<s-tab>" },
-    sort = { "s" },
-    install = { "i" },
-    hover = { "K" },
-  },
-
   -- Behavior
   preview_debounce = 100, -- ms delay for preview updates
-  cache_duration = 24 * 60 * 60, -- 24 hours
-  data_source_url = "https://gist.githubusercontent.com/alex-popov-tech/dfb6adf1ee0506461d7dc029a28f851d/raw/db_minified.json", -- URL for plugin data
-  plugin_manager = "not-selected", -- Force manager detection ("lazy.nvim" or "vim.pack")
+  plugin_manager = "not-selected", -- "lazy.nvim" or "vim.pack"
 
-  -- Logging
-  logging = "off",
+  -- Logging level: "off"|"error"|"warn"|"info"|"debug"
+  logging = "warn",
 
-  -- List display settings (using function-based renderer)
-  repository_renderer = function(repo, isInstalled)
+  -- Custom list renderer
+  ---@param repo Repository
+  ---@param opts RendererOpts -- { sort_type, downloads, views, is_installed }
+  repository_renderer = function(repo, opts)
     return {
-      {
-        content = isInstalled and "🏠" or "📦",
-        limit = 2,
-      },
-      {
-        content = "⭐" .. repo.pretty.stars,
-        limit = 10,
-      },
-      {
-        content = repo.full_name,
-        limit = 35,
-      },
-      {
-        content = "Updated " .. repo.pretty.updated_at,
-        limit = 25,
-      },
-      {
-        content = repo.tags and table.concat(repo.tags, ", ") or "",
-        limit = 30,
-      },
+      { content = "⭐" .. repo.pretty.stars, limit = 10 },
+      { content = repo.name, limit = 25 },
+      { content = repo.description, limit = 150 },
     }
-  end, -- Function to render repository data for list display
+  end,
 
   -- Z-index configuration for modal layers
   zindex = {
-    base = 10, -- Base modal components (heading, list, preview)
-    backdrop = 15, -- Reserved for backdrop/dimming layer
-    popup = 20, -- Popup modals (help, sort, filter)
+    base = 10,
+    backdrop = 15,
+    popup = 20,
   },
 
   -- Resize behavior
-  resize_debounce = 30, -- ms delay for resize debouncing (10-200ms range)
+  resize_debounce = 30, -- ms (10-200 range)
 
   -- Plugin installation folder (absolute path or starts with ~)
   -- Defaults to ~/.config/nvim/lua/plugins if not specified
-  plugins_folder = nil, -- Example: "~/my-nvim-plugins" or "/opt/nvim/plugins"
+  plugins_folder = nil,
 
-  -- Telemetry (opt-out, sends anonymous usage counts)
-  telemetry = true, -- Tracks: plugin views and installs
-                    -- Privacy: IP hashed with daily rotating salt, no PII stored
-                    -- Public stats: GET https://store-nvim-telemetry.alex-popov-tech.workers.dev/stats
-                    -- Source: https://github.com/alex-popov-tech/store.nvim.telemetry
+  -- Anonymous, open-source, and public usage telemetry (opt-out by setting false)
+  -- Source: https://github.com/alex-popov-tech/store.nvim.telemetry
+  telemetry = true,
 })
 ```
-
-Set `plugin_manager = "lazy.nvim"` or `plugin_manager = "vim.pack"` to lock the installation modal to a specific manager. The default `"not-selected"` lets store.nvim probe both managers and pick whichever has data available.
 
 ## API
 

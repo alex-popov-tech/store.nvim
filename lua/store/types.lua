@@ -12,6 +12,7 @@
 ---@field updated_at string Last update timestamp (ISO format)
 ---@field pretty {stars: string, issues: string, created_at: string, updated_at: string} Formatted display values
 ---@field readme? string README reference in the form "branch/path"
+---@field doc? string[] Array of documentation references, each in "branch/path" form
 
 ---@class Meta
 ---@field created_at number Unix timestamp of database creation
@@ -24,4 +25,12 @@
 ---@field content string Display content for this field
 ---@field limit number Maximum display width for this field
 
----@alias RepositoryRenderer fun(repo: Repository, isInstalled: boolean): RepositoryField[]
+---@alias SortType "most_stars"|"rising_stars_monthly"|"rising_stars_weekly"|"recently_updated"|"recently_created"|"most_downloads_monthly"|"most_views_monthly"
+
+---@class RendererOpts
+---@field is_installed boolean Whether the repository is installed
+---@field sort_type SortType The active sort type
+---@field downloads number Monthly download count for this repo (0 if unavailable)
+---@field views number Monthly view count for this repo (0 if unavailable)
+
+---@alias RepositoryRenderer fun(repo: Repository, opts: RendererOpts): RepositoryField[]

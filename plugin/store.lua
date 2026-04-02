@@ -1,3 +1,8 @@
+if vim.g.loaded_store then
+  return
+end
+vim.g.loaded_store = 1
+
 ---Store modal command - unified entry point
 ---Creates a user command "Store" that shows the store modal interface
 ---@usage :Store

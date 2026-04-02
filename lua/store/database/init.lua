@@ -17,7 +17,7 @@ local INSTALL_CACHE_FILES = {
   ["vim.pack"] = "vim.pack.json",
 }
 
-local function fetch_content_length(url, callback)
+local function fetch_etag(url, callback)
   curl.head(url, {
     headers = HTTP_HEADERS,
     timeout = 5000,
@@ -27,23 +27,22 @@ local function fetch_content_length(url, callback)
         return
       end
 
-      local content_length = nil
+      local etag = nil
       if response.headers then
         for _, header in ipairs(response.headers) do
           local key, value = header:match("^([^:]+):%s*(.+)$")
-          if key and key:lower() == "content-length" then
-            content_length = tonumber(value)
-            break
+          if key and key:lower() == "etag" then
+            etag = vim.trim(value)
           end
         end
       end
 
-      if not content_length then
-        callback(nil, "No content-length header found in HEAD response")
+      if not etag then
+        callback(nil, "No etag header found in HEAD response")
         return
       end
 
-      callback(content_length, nil)
+      callback(etag, nil)
     end,
   })
 end
@@ -69,6 +68,7 @@ local function fetch_remote_json(url, callback)
   })
 end
 
+
 ---@module "store.database"
 ---Database facade that orchestrates GitHub client and caching operations
 ---Maintains the same public API as the original database module
@@ -93,65 +93,66 @@ function M.fetch_plugins(callback)
   if cache_type == "none" then
     logger.debug("📭 No cache - fetching from network")
     utils.tryNotify("[store.nvim] No cache found, fetching database...", vim.log.levels.INFO)
-    github_client.fetch_plugins(function(data, error)
+    github_client.fetch_plugins(function(data, error, raw_json)
       if error then
         callback(nil, error)
         return
       end
       logger.info("✅ Fresh DB: " .. #data.items .. " plugins")
-      cache.save_db(data)
+      cache.save_db(data, raw_json)
+      -- Fetch and save etag for future staleness checks
+      local data_url = config.get().data_source_url
+      fetch_etag(data_url, function(etag)
+        if etag then
+          local cache_dir = db_utils.get_cache_dir()
+          vim.schedule(function()
+            if not cache_dir:exists() then cache_dir:mkdir({ parents = true }) end
+            pcall(function() (cache_dir / "db.etag"):write(etag, "w") end)
+          end)
+        end
+      end)
       callback(data, nil)
     end)
     return
   end
 
-  -- FILE CACHE: Validate with HEAD request (content-length comparison)
-  github_client.fetch_plugins_content_length(function(server_content_length, head_error)
+  -- FILE CACHE: Validate with HEAD request (etag comparison)
+  local data_url = config.get().data_source_url
+  fetch_etag(data_url, function(server_etag, head_error)
     if head_error then
-      -- HEAD request failed, fallback to cached data
       logger.warn("HEAD request failed, using cached data: " .. head_error)
       callback(cached_data, nil)
       return
     end
 
-    -- Get local file size for comparison
+    -- Compare with saved etag
     local cache_dir = db_utils.get_cache_dir()
-    local db_file = cache_dir / "db.json"
-    local stat, stat_err = vim.loop.fs_stat(db_file:absolute())
-
-    if not stat or stat_err then
-      logger.warn("Cannot read local file stats, fetching fresh data")
-      github_client.fetch_plugins(function(data, error)
-        if error then
-          callback(nil, error)
-          return
-        end
-        logger.info("✅ Fresh DB: " .. #data.items .. " plugins")
-        cache.save_db(data)
-        callback(data, nil)
-      end)
-      return
+    local etag_file = cache_dir / "db.etag"
+    local local_etag = nil
+    if etag_file:exists() then
+      pcall(function() local_etag = vim.trim(etag_file:read()) end)
     end
 
-    local local_file_size = stat.size
-    logger.debug(
-      "HEAD validation - Server: " .. server_content_length .. " bytes, Local: " .. local_file_size .. " bytes"
-    )
+    logger.debug("Etag validation - Server: " .. server_etag .. ", Local: " .. tostring(local_etag))
 
-    -- Compare sizes
-    if server_content_length == local_file_size then
-      logger.debug("✅ File cache valid (sizes match) - using cached data")
+    if server_etag == local_etag then
+      logger.debug("✅ File cache valid (etag matches) - using cached data")
       callback(cached_data, nil)
     else
       utils.tryNotify("[store.nvim] Newer database found, updating...", vim.log.levels.INFO)
-      logger.debug("🔄 File cache stale (sizes differ) - fetching fresh data")
-      github_client.fetch_plugins(function(data, error)
+      logger.debug("🔄 File cache stale (etag differs) - fetching fresh data")
+      github_client.fetch_plugins(function(data, error, raw_json)
         if error then
           callback(nil, error)
           return
         end
         logger.info("✅ Updated DB: " .. #data.items .. " plugins")
-        cache.save_db(data)
+        cache.save_db(data, raw_json)
+        -- Save etag for next session
+        vim.schedule(function()
+          if not cache_dir:exists() then cache_dir:mkdir({ parents = true }) end
+          pcall(function() etag_file:write(server_etag, "w") end)
+        end)
         callback(data, nil)
       end)
     end
@@ -214,7 +215,7 @@ function M.fetch_install_catalogue(manager, callback)
     return
   end
 
-  fetch_content_length(source.url, function(content_length, head_error)
+  fetch_etag(source.url, function(server_etag, head_error)
     if head_error then
       logger.warn("Install catalogue HEAD request failed for " .. manager .. ": " .. head_error)
       callback(cached_catalogue, nil)
@@ -222,21 +223,23 @@ function M.fetch_install_catalogue(manager, callback)
     end
 
     local cache_dir = db_utils.get_cache_dir()
-    local cache_file = cache_dir / source.cache_filename
-    local stat, stat_err = vim.loop.fs_stat(cache_file:absolute())
-
-    if not stat or stat_err then
-      logger.warn("Cannot read install catalogue cache stats for " .. manager .. ": " .. tostring(stat_err))
-      fetch_install_catalogue_from_network(manager, source, callback)
-      return
+    local etag_file = cache_dir / (source.cache_filename .. ".etag")
+    local local_etag = nil
+    if etag_file:exists() then
+      pcall(function() local_etag = vim.trim(etag_file:read()) end)
     end
 
-    if content_length == stat.size then
-      logger.debug("✅ Install catalogue cache valid for " .. manager .. " (" .. content_length .. " bytes)")
+    if server_etag == local_etag then
+      logger.debug("✅ Install catalogue cache valid for " .. manager .. " (etag matches)")
       callback(cached_catalogue, nil)
     else
       logger.debug("🔄 Install catalogue cache stale for " .. manager .. " - fetching fresh copy")
       fetch_install_catalogue_from_network(manager, source, callback)
+      -- Save etag after fetch
+      vim.schedule(function()
+        if not cache_dir:exists() then cache_dir:mkdir({ parents = true }) end
+        pcall(function() etag_file:write(server_etag, "w") end)
+      end)
     end
   end)
 end
@@ -268,33 +271,97 @@ function M.get_readme(repo, callback)
   return
 end
 
----Internal helper to fetch README from network and update cache
+---Internal helper to fetch README from worker cache and update local cache
 ---@param repo Repository Repository object
 ---@param callback fun(data: string[]|nil, error: string|nil) Callback function
 function M._fetch_readme_from_network(repo, callback)
-  logger.debug("📥 Fetching README from network for " .. repo.full_name)
+  logger.debug("📥 Fetching README from worker for " .. repo.full_name)
+
+  local source = repo.source or "github"
+  local url = db_utils.build_worker_readme_url(config.get().readme_cache_url, source, repo.full_name, repo.readme)
+
+  curl.get(url, {
+    timeout = 10000,
+    callback = function(response)
+      if response.status < 200 or response.status >= 300 then
+        local errorBody = response.body or "Failed to fetch README from worker"
+        callback(nil, response.status .. " " .. errorBody)
+        return
+      end
+
+      local lines = vim.split(response.body, "\n", { plain = true })
+
+      logger.debug("✅ README Downloaded: " .. repo.full_name .. " (" .. #lines .. " lines)")
+
+      -- Save to cache for future requests
+      local save_error = cache.save_readme(repo.full_name, lines)
+      if save_error then
+        logger.warn("Failed to save README to cache for " .. repo.full_name .. ": " .. save_error)
+      end
+      callback(lines, nil)
+    end,
+  })
+end
+
+---Get documentation content for a specific doc file, with caching support
+---@param repo Repository
+---@param doc_path string Specific doc reference from repo.doc array (e.g., "main/doc/help.txt")
+---@param callback fun(data: string[]|nil, error: string|nil) Callback function with doc lines or error
+function M.get_doc(repo, doc_path, callback)
+  logger.debug("get_doc called for " .. repo.full_name .. " [" .. tostring(doc_path) .. "]")
+
+  if not doc_path or doc_path == "" then
+    callback(nil, "No documentation available for " .. repo.full_name)
+    return
+  end
+
+  local cache_type, cached_doc = cache.get_doc(repo.full_name, doc_path)
+
+  -- EARLY RETURN: Memory cache - use immediately
+  if cache_type == "memory" then
+    logger.debug("📦 DOC Memory cache - using immediately for " .. repo.full_name .. " [" .. doc_path .. "]")
+    callback(cached_doc, nil)
+    return
+  end
+
+  -- EARLY RETURN: No cache - fetch directly
+  if cache_type == "none" then
+    logger.debug("📭 No DOC cache - fetching from network for " .. repo.full_name .. " [" .. doc_path .. "]")
+    return M._fetch_doc_from_network(repo, doc_path, callback)
+  end
+
+  -- FILE CACHE: Use cached doc directly
+  logger.debug("✅ DOC File cache hit - using cached data for " .. repo.full_name .. " [" .. doc_path .. "]")
+  callback(cached_doc, nil)
+end
+
+---Internal helper to fetch doc from network and update cache
+---@param repo Repository Repository object
+---@param doc_path string Specific doc reference (e.g., "main/doc/help.txt")
+---@param callback fun(data: string[]|nil, error: string|nil) Callback function
+function M._fetch_doc_from_network(repo, doc_path, callback)
+  logger.debug("📥 Fetching doc from network for " .. repo.full_name .. " [" .. doc_path .. "]")
 
   -- Choose the appropriate client based on the repository source
   local client
   if repo.source == "gitlab" then
     client = gitlab_client
   else
-    -- Default to GitHub client for "github" source or any other source
     client = github_client
   end
 
-  client.get_readme(repo, function(data, error)
+  client.get_doc(repo, doc_path, function(data, error)
     if error then
       callback(nil, error)
       return
     end
 
-    logger.debug("✅ README Downloaded: " .. repo.full_name .. " (" .. #data .. " lines)")
+    logger.debug("✅ DOC Downloaded: " .. repo.full_name .. " [" .. doc_path .. "] (" .. #data .. " lines)")
 
     -- Save to cache for future requests
-    local save_error = cache.save_readme(repo.full_name, data)
+    local save_error = cache.save_doc(repo.full_name, doc_path, data)
     if save_error then
-      logger.warn("Failed to save README to cache for " .. repo.full_name .. ": " .. save_error)
+      logger.warn("Failed to save doc to cache for " .. repo.full_name .. " [" .. doc_path .. "]: " .. save_error)
     end
     callback(data, nil)
   end)
