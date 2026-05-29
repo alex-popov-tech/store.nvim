@@ -522,7 +522,12 @@ function M.set_lines(buf_id, lines)
   -- Temporarily make modifiable and not readonly to set lines
   set_option_if_changed("modifiable", true, { buf = buf_id })
   set_option_if_changed("readonly", false, { buf = buf_id })
-  pcall(vim.api.nvim_buf_set_lines, buf_id, 0, -1, false, lines)
+  local ok, err = pcall(vim.api.nvim_buf_set_lines, buf_id, 0, -1, false, lines)
+  if not ok then
+    -- Never fail silently: a rejected write leaves the buffer on its previous
+    -- content (e.g. a stuck "Loading..."), so surface it instead of hiding it.
+    M.tryNotify("[store.nvim] Failed to set buffer lines: " .. tostring(err), vim.log.levels.ERROR)
+  end
 
   -- Always restore original states
   pcall(set_option_if_changed, "modifiable", was_modifiable, { buf = buf_id })
