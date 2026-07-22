@@ -3,7 +3,7 @@
 
 ## Features
 
-A Neovim plugin for browsing and installing Neovim plugins through an intuitive UI interface.
+A Neovim plugin for browsing and installing Neovim plugins through an intuitive UI.
 
 - 🚀 **6,200+ Plugins Available**: Comprehensive plugin database updated daily, ensuring new plugins are added to database right away
 - 🤯 **Universal Plugin Installation**: All plugins are installable with your package manager of choice (`lazy.nvim`, `vim.pack`, etc.)
@@ -35,12 +35,12 @@ A Neovim plugin for browsing and installing Neovim plugins through an intuitive 
 <details>
   <summary><strong>Why is plugin %plugin_name not listed?</strong></summary>
 
-  Please add `neovim-plugin` tag to your repository, and wait for the crawler to pick it up.
+  Please add the `neovim-plugin` tag to your repository, and wait for the crawler to pick it up.
 </details>
 
 
 <details>
   <summary><strong>Plugin has <code>lazy.nvim</code> config in readme, but <code>store.nvim</code> suggests migrated/default version instead.</strong></summary>
 
-  Usually that happens when code snippets with configs are invalid lua, if thats not the case - please [create an issue](https://github.com/alex-popov-tech/store.nvim/issues/).
+  Usually that happens when code snippets with configs are invalid lua, if that's not the case - please [create an issue](https://github.com/alex-popov-tech/store.nvim/issues/).
 </details>
