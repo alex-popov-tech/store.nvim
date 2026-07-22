@@ -1,4 +1,5 @@
-*store.nvim.txt*           For NVIM v0.8.0          Last change: 2026 April 02
+*store.nvim.txt*
+                                  For NVIM v0.8.0    Last change: 2026 July 22
 
 ==============================================================================
 Table of Contents                               *store.nvim-table-of-contents*
@@ -33,7 +34,7 @@ INSTALLATION                              *store.nvim-store.nvim-installation*
 
 USAGE                                            *store.nvim-store.nvim-usage*
 
-Open the with:
+Open with:
 
 - **Command**: `:Store`
 - **Lua API**: `require("store").open()`
