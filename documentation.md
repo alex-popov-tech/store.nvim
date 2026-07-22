@@ -18,7 +18,7 @@
 
 ## Usage
 
-Open the with:
+Open with:
 
 - **Command**: `:Store`
 
