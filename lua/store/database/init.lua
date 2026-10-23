@@ -170,7 +170,13 @@ local function fetch_install_catalogue_from_network(manager, source, callback)
     local items = data and data.items or {}
     utils.tryNotify("✅ Install catalogue updated for " .. manager .. ": " .. vim.tbl_count(items) .. " entries")
 
-    local save_error = cache.save_install_catalogue(manager, data)
+    local save_error = cache.save_install_catalogue(manager, data, function()
+      if source.etag then
+        local cache_dir = db_utils.get_cache_dir()
+        local etag_file = cache_dir / (source.cache_filename .. ".etag")
+        pcall(function() etag_file:write(source.etag, "w") end)
+      end
+    end)
     if save_error then
       logger.warn("Failed to persist install catalogue for " .. manager .. ": " .. save_error)
     end
@@ -234,12 +240,8 @@ function M.fetch_install_catalogue(manager, callback)
       callback(cached_catalogue, nil)
     else
       logger.debug("🔄 Install catalogue cache stale for " .. manager .. " - fetching fresh copy")
+      source.etag = server_etag
       fetch_install_catalogue_from_network(manager, source, callback)
-      -- Save etag after fetch
-      vim.schedule(function()
-        if not cache_dir:exists() then cache_dir:mkdir({ parents = true }) end
-        pcall(function() etag_file:write(server_etag, "w") end)
-      end)
     end
   end)
 end
