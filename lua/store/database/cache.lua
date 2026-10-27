@@ -188,7 +188,10 @@ function M.save_install_catalogue(manager, content, on_saved)
     end
 
     if on_saved then
-      on_saved()
+      local callback_ok, callback_err = pcall(on_saved)
+      if not callback_ok then
+        logger.error("Install catalogue saved, but post-save callback failed for " .. manager .. ": " .. tostring(callback_err))
+      end
     end
   end)
 
