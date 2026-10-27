@@ -158,7 +158,7 @@ end
 ---@param manager string Plugin manager identifier ("lazy.nvim"|"vim.pack")
 ---@param content table Catalogue JSON payload
 ---@return string|nil error Error message if save failed, nil on success
-function M.save_install_catalogue(manager, content)
+function M.save_install_catalogue(manager, content, on_saved)
   local cache_filename = INSTALL_CACHE_FILES[manager]
   if not cache_filename then
     return "Unknown plugin manager: " .. tostring(manager)
@@ -184,6 +184,14 @@ function M.save_install_catalogue(manager, content)
     end)
     if not success then
       logger.error("Failed to save install catalogue for " .. manager .. ": " .. tostring(write_err))
+      return
+    end
+
+    if on_saved then
+      local callback_ok, callback_err = pcall(on_saved)
+      if not callback_ok then
+        logger.error("Install catalogue saved, but post-save callback failed for " .. manager .. ": " .. tostring(callback_err))
+      end
     end
   end)
 
