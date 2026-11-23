@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### ✨ Features Added
+
+**Docs full screen** — `f` on the Docs or Readme tab: whatever the preview is
+showing fills the editor, and `f` (or `q`) brings the store modal back.
+`toggle_docs_fullscreen` in `keybindings` changes the key.
+
+**Take the doc out of the store** — `<C-t>` / `<C-v>` / `<C-s>` on the Docs or
+Readme tab: the previewed doc (or README) opens in a real buffer — a new tab,
+a vertical or a horizontal split — named `store://owner/repo/doc-path`; the
+modal closes, the doc stays. `open_docs_tab` / `open_docs_vsplit` /
+`open_docs_split` in `keybindings` change the keys.
+
+**Browser-style offline cache** (`cache` options):
+
+- Everything viewed — the plugin database, install catalogues, READMEs, docs and stats — is cached on disk under `stdpath("cache")/store.nvim/http` and served without a request while it is fresh (`cache.update_interval`, the browser's max-age)
+- Stale resources revalidate with one conditional request (`If-None-Match` / `If-Modified-Since`): `304` keeps the copy for free, `200` replaces it
+- When the network is unreachable (no internet, dead proxy) the cached data is shown — silently, no messages — instead of the store failing to open; the first network-level failure latches the session offline for a minute, so cycling the list never sprays doomed requests
+- Every request is bounded: `--connect-timeout`/`--max-time` follow the configured timeout, so a half-dead network fails in seconds instead of hanging one unbounded curl per URL
+- `cache.implicit_updates` (default on) refreshes stale lists silently in the background after the cached list is shown; `cache.enabled = false` restores the old network-required behavior
+- The explicit refresh (`<leader>r`) always bypasses the freshness window; an upgrade from the previous version adopts its `db.json` / `db.etag` and temp-dir READMEs into the new cache automatically
+
+### 🐞 Fixed
+
+- **Opening the same doc twice** — `C-t` (or `C-v`/`C-s`) on a doc that already has a live `store://` buffer used to leave the new buffer nameless (`nvim_buf_set_name` refuses a taken name); it now gets a numbered name (`store://owner/repo/doc (2)`)
+
 ## [4.0.0] - 2026-04-01
 
 ### ✨ Features Added

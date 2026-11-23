@@ -12,9 +12,9 @@ local setup_error
 ---@param args? UserConfig User configuration to merge with defaults
 M.setup = function(args)
   local err = config.setup(args)
-  if err ~= nil then
-    setup_error = err
-  end
+  -- nil on success: a later good setup must clear an earlier error,
+  -- or the store stays locked out of a mistake that was already fixed
+  setup_error = err
 end
 
 ---Open the store modal interface
@@ -28,10 +28,19 @@ M.open = function()
     return
   end
 
+  local cfg = config.get()
+  if type(cfg) ~= "table" then
+    -- belt and braces: config.get() is never supposed to return nil, and
+    -- a nil here used to surface as a cryptic `tbl_deep_extend: expected
+    -- table, got nil` traceback from this very spot
+    vim.notify("Cannot open store modal: the configuration is not ready", vim.log.levels.ERROR)
+    return
+  end
+
   highlights.setup()
 
   local StoreModal = require("store.ui.store_modal")
-  local modal_config = vim.tbl_deep_extend("force", config.get(), {
+  local modal_config = vim.tbl_deep_extend("force", cfg, {
     on_close = function()
       current_modal = nil
     end,

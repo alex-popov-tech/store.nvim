@@ -330,11 +330,219 @@ function M.switch_docs(instance)
 
   database.get_doc(repo, doc_path, function(content, error)
     if error then
-      instance.preview:render_docs({ state = "error", content = { error } })
+      -- offline with nothing cached is a state, not an error: the
+      -- preview says so, quietly, instead of dumping curl's complaint
+      local offline = error:find("not connected", 1, true)
+        or error:find("network unreachable", 1, true)
+      local content_lines = offline and { "", "  Not connected", "" } or { error }
+      instance.preview:render_docs({ state = "error", content = content_lines })
     else
       instance.preview:render_docs({ state = "ready", content = content, docs_id = repo.full_name .. "::" .. doc_path })
     end
   end)
+end
+
+---Toggle the preview full screen: whatever the Docs or Readme tab is
+---showing opens in a window covering the editor, and the same key (or q)
+---brings the modal back. Only does something while content is on screen.
+---@param instance StoreModal instance of main modal
+function M.toggle_docs_fullscreen(instance)
+  logger.debug("Action: toggle docs fullscreen")
+  local preview = instance.preview
+  if not (preview and preview.state) then
+    return
+  end
+  -- whatever the preview is showing: the docs tab's buffer, or the
+  -- readme's — f fullscreens the pane either way (the key works from
+  -- the README tab too, not only once D was pressed)
+  local tab = preview:get_active_tab()
+  local src = tab == "docs" and preview.state.buf.docs_id or preview.state.buf.id
+  if tab ~= "docs" and tab ~= "readme" then
+    return
+  end
+
+  -- toggle back: the fullscreen window goes, the modal keeps the focus
+  if instance.docs_fullscreen and vim.api.nvim_win_is_valid(instance.docs_fullscreen) then
+    local win = instance.docs_fullscreen
+    instance.docs_fullscreen = nil
+    pcall(vim.api.nvim_win_close, win, true)
+    if instance.state.current_focus and vim.api.nvim_win_is_valid(instance.state.current_focus) then
+      pcall(vim.api.nvim_set_current_win, instance.state.current_focus)
+    end
+    return
+  end
+
+  -- the text as it sits in the shown buffer right now
+  local lines = {}
+  if src and vim.api.nvim_buf_is_valid(src) then
+    lines = vim.api.nvim_buf_get_lines(src, 0, -1, false)
+  end
+  if #lines == 0 then
+    return -- nothing rendered yet: loading or error, nothing to enlarge
+  end
+
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  local ft = vim.bo[src].filetype
+  if ft ~= "" then
+    pcall(function()
+      vim.bo[buf].filetype = ft
+    end)
+  end
+  vim.bo[buf].modifiable = false
+  vim.bo[buf].bufhidden = "wipe"
+
+  -- the screen as this nvim sees it: the attached UI when there is one
+  -- (a terminal), the options when there is not (headless, an embedded
+  -- core, a UI attached later) — nvim_list_uis() can be empty, and a nil
+  -- index there used to kill the whole toggle
+  local uis = vim.api.nvim_list_uis()
+  local width = (uis[1] and uis[1].width) or vim.o.columns
+  local height = (uis[1] and uis[1].height) or vim.o.lines
+  local win = vim.api.nvim_open_win(buf, true, {
+    relative = "editor",
+    row = 0,
+    col = 0,
+    width = math.max(1, width),
+    height = math.max(1, height - vim.o.cmdheight - (vim.o.laststatus == 0 and 0 or 1)),
+    style = "minimal",
+    border = "none",
+    zindex = 100,
+  })
+  vim.wo[win].wrap = true
+  vim.wo[win].linebreak = true
+  vim.wo[win].scrolloff = 2
+  instance.docs_fullscreen = win
+
+  -- back to the modal: the toggle key, or the closers
+  local keys = vim.list_extend(
+    { "f" },
+    vim.list_extend(
+      (instance.config.keybindings and instance.config.keybindings.toggle_docs_fullscreen) or {},
+      instance.config.keybindings and instance.config.keybindings.close or {}
+    )
+  )
+  local seen = {}
+  for _, key in ipairs(keys) do
+    if not seen[key] then
+      seen[key] = true
+      vim.keymap.set("n", key, function()
+        if instance.docs_fullscreen and vim.api.nvim_win_is_valid(instance.docs_fullscreen) then
+          local w = instance.docs_fullscreen
+          instance.docs_fullscreen = nil
+          pcall(vim.api.nvim_win_close, w, true)
+        end
+        if instance.state.current_focus and vim.api.nvim_win_is_valid(instance.state.current_focus) then
+          pcall(vim.api.nvim_set_current_win, instance.state.current_focus)
+        end
+      end, {
+        buffer = buf,
+        silent = true,
+        nowait = true,
+        desc = "store.nvim: docs fullscreen off",
+      })
+    end
+  end
+
+  -- the modal closing under it must take the fullscreen with it
+  vim.api.nvim_create_autocmd("WinClosed", {
+    pattern = tostring(instance.preview:get_window_id()),
+    once = true,
+    callback = function()
+      if instance.docs_fullscreen and vim.api.nvim_win_is_valid(instance.docs_fullscreen) then
+        local w = instance.docs_fullscreen
+        instance.docs_fullscreen = nil
+        pcall(vim.api.nvim_win_close, w, true)
+      end
+    end,
+  })
+end
+
+---The doc (or readme) the preview is showing, taken out of the store: the
+---modal closes (the doc is the thing on screen now, not the store) and the
+---text opens in a real buffer — a new tab, a vertical or a horizontal split
+---— named after the repository and the doc, wrapped and highlighted like
+---the preview. Nothing else about the store is kept: it is a snapshot of
+---what the tab was showing.
+---@param instance StoreModal instance of main modal
+---@param how 'tab'|'vsplit'|'split'
+function M.open_docs_external(instance, how)
+  logger.debug("Action: open docs in a " .. how)
+  local preview = instance.preview
+  if not (preview and preview.state) then
+    return
+  end
+  local tab = preview:get_active_tab()
+  if tab ~= "docs" and tab ~= "readme" then
+    return -- nothing on screen to take out
+  end
+  local src = tab == "docs" and preview.state.buf.docs_id or preview.state.buf.id
+  if not (src and vim.api.nvim_buf_is_valid(src)) then
+    return
+  end
+  local lines = vim.api.nvim_buf_get_lines(src, 0, -1, false)
+  if #lines == 0 then
+    return -- loading or error: nothing to take out yet
+  end
+  local ft = vim.bo[src].filetype
+
+  -- the name: the repository and the doc (or the readme), so :buffers and
+  -- the tab label say what the buffer is
+  local repo = instance.state.current_repository
+  local doc_path = "README.md"
+  if tab == "docs" then
+    doc_path = preview.state.doc_paths and preview.state.doc_paths[preview.state.doc_index] or nil
+  end
+  local name = "store://"
+  if repo and repo.full_name then
+    name = name .. repo.full_name
+  end
+  if doc_path and doc_path ~= "" then
+    name = name .. "/" .. doc_path
+  end
+
+  -- the modal goes first: closing it restores the windows underneath, so
+  -- the tab or the split opens on the restored layout, not under the modal
+  local close_err = M.close(instance)
+  if close_err then
+    logger.warn("Failed to close the modal: " .. close_err)
+  end
+
+  local buf = vim.api.nvim_create_buf(false, true)
+  -- buffer names are unique in a session: opening the same doc twice (a
+  -- tab, then a split of the same page) would collide on the plain name,
+  -- and nvim_buf_set_name would fail leaving the buffer nameless — try
+  -- the name, then numbered copies of it
+  if not pcall(vim.api.nvim_buf_set_name, buf, name) then
+    local stem, n = name, 2
+    while not pcall(vim.api.nvim_buf_set_name, buf, stem .. " (" .. n .. ")") do
+      n = n + 1
+      if n > 20 then
+        break -- give up named, the doc still opens
+      end
+    end
+  end
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  if ft ~= "" then
+    pcall(function()
+      vim.bo[buf].filetype = ft
+    end)
+  end
+  vim.bo[buf].modifiable = false
+  vim.bo[buf].buflisted = true
+  vim.bo[buf].bufhidden = "hide"
+
+  local cmd = how == "tab" and "tabnew" or (how == "vsplit" and "vnew" or "new")
+  local ok, err = pcall(vim.cmd, cmd)
+  if not ok then
+    logger.warn("Cannot open the doc in a " .. how .. ": " .. tostring(err))
+    vim.api.nvim_buf_delete(buf, { force = true })
+    return
+  end
+  vim.api.nvim_win_set_buf(0, buf)
+  vim.wo.wrap = true
+  vim.wo.linebreak = true
+  vim.wo.scrolloff = 2
 end
 
 function M.reset(instance)
@@ -349,10 +557,12 @@ function M.reset(instance)
     logger.warn("Failed to clear database: " .. err)
   end
 
-  -- Concurrently fetch plugins data and installed plugins
+  -- Concurrently fetch plugins data and installed plugins; the explicit
+  -- refresh forces the network (the freshness window is for the quiet
+  -- opens, not for the button the user just pressed)
   database.fetch_plugins(function(data, err)
     event_handlers.on_db(instance, data, err)
-  end)
+  end, { force = true })
 
   -- Concurrently fetch installed plugins
   plugin_utils.get_installed_plugins(

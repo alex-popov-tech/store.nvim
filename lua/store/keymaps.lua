@@ -15,6 +15,10 @@ local labels = {
   switch_install = "Switch to Install tab",
   switch_readme = "Switch to Readme tab",
   switch_docs = "Switch to Docs tab",
+  toggle_docs_fullscreen = "Toggle docs fullscreen",
+  open_docs_tab = "Open the doc in a new tab",
+  open_docs_vsplit = "Open the doc in a vertical split",
+  open_docs_split = "Open the doc in a horizontal split",
 }
 
 -- Get label for an action
@@ -45,6 +49,16 @@ local function get_handler(name)
     switch_install = actions.switch_install,
     switch_readme = actions.switch_readme,
     switch_docs = actions.switch_docs,
+    toggle_docs_fullscreen = actions.toggle_docs_fullscreen,
+    open_docs_tab = function(instance)
+      actions.open_docs_external(instance, "tab")
+    end,
+    open_docs_vsplit = function(instance)
+      actions.open_docs_external(instance, "vsplit")
+    end,
+    open_docs_split = function(instance)
+      actions.open_docs_external(instance, "split")
+    end,
   }
   return handlers[name]
 end
@@ -90,6 +104,10 @@ local ALL_TAB_ACTIONS = {
   "switch_install",
   "switch_readme",
   "switch_docs",
+  "toggle_docs_fullscreen",
+  "open_docs_tab",
+  "open_docs_vsplit",
+  "open_docs_split",
 }
 
 local INSTALL_ACTIONS = {
@@ -98,6 +116,10 @@ local INSTALL_ACTIONS = {
   "switch_list",
   "switch_readme",
   "switch_docs",
+  "toggle_docs_fullscreen",
+  "open_docs_tab",
+  "open_docs_vsplit",
+  "open_docs_split",
 }
 
 -- Public function to create keymap applier for list component

@@ -18,6 +18,10 @@ function M.get_doc(repo, doc_path, callback)
 
   curl.get(plugin_url, {
     timeout = 10000,
+    on_error = function(e)
+      require("store.database.net").mark_offline(e.message)
+      callback(nil, "not connected")
+    end,
     callback = function(response)
       local success = response.status >= 200 and response.status < 300
       if not success then

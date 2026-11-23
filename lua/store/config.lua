@@ -8,7 +8,7 @@ local sort = require("store.sort")
 ---@field width? number Window width (0.0-1.0 as percentage of screen width)
 ---@field height? number Window height (0.0-1.0 as percentage of screen height)
 ---@field proportions? {list: number, preview: number} Layout proportions for panes (0.0-1.0)
----@field keybindings? {help: string[], close: string[], filter: string[], reset: string[], open: string[], sort: string[], hover: string[], switch_list: string[], switch_install: string[], switch_readme: string[], switch_docs: string[]} Key binding configuration
+---@field keybindings? {help: string[], close: string[], filter: string[], reset: string[], open: string[], sort: string[], hover: string[], switch_list: string[], switch_install: string[], switch_readme: string[], switch_docs: string[], toggle_docs_fullscreen: string[]} Key binding configuration
 ---@field preview_debounce? number Debounce delay for preview updates (ms)
 ---@field logging? string Logging level: "off"|"error"|"warn"|"info"|"debug" (default: "off")
 ---@field repository_renderer? RepositoryRenderer Function to render repository data for list display
@@ -19,13 +19,14 @@ local sort = require("store.sort")
 ---@field plugin_manager? string Preferred plugin manager selection ("not-selected"|"lazy.nvim"|"vim.pack")
 ---@field readme_cache_url? string Base URL for README cache worker (pre-processes and caches READMEs)
 ---@field telemetry? boolean Send anonymous usage counts (default: true)
+---@field cache? { enabled?: boolean, update_interval?: number, implicit_updates?: boolean, sections?: { list?: boolean, install_catalogue?: boolean, readme?: boolean, docs?: boolean } } Browser-style persistent cache: viewed content on disk, offline fallback, silent background updates. `sections` toggles the cache per kind of content (list, install catalogue, readmes, docs) - all on by default
 
 ---@class UserConfigWithDefaults
 ---@field layout string Layout mode: "modal" or "tab"
 ---@field width number Window width (0.0-1.0 as percentage of screen width)
 ---@field height number Window height (0.0-1.0 as percentage of screen height)
 ---@field proportions {list: number, preview: number} Layout proportions for panes (0.0-1.0)
----@field keybindings {help: string[], close: string[], filter: string[], reset: string[], open: string[], sort: string[], hover: string[], switch_list: string[], switch_install: string[], switch_readme: string[], switch_docs: string[]} Key binding configuration
+---@field keybindings {help: string[], close: string[], filter: string[], reset: string[], open: string[], sort: string[], hover: string[], switch_list: string[], switch_install: string[], switch_readme: string[], switch_docs: string[], toggle_docs_fullscreen: string[]} Key binding configuration
 ---@field preview_debounce number Debounce delay for preview updates (ms)
 ---@field data_source_url string URL for fetching plugin data
 ---@field logging string Logging level: "off"|"error"|"warn"|"info"|"debug" (default: "off")
@@ -37,6 +38,7 @@ local sort = require("store.sort")
 ---@field plugin_manager string Preferred plugin manager selection
 ---@field readme_cache_url string Base URL for README cache worker
 ---@field telemetry boolean Send anonymous usage counts (default: true)
+---@field cache { enabled: boolean, update_interval: number, implicit_updates: boolean }
 
 ---@class ComponentLayout
 ---@field width number Window width
@@ -298,6 +300,10 @@ local DEFAULT_USER_CONFIG = {
     switch_install = { "I" },
     switch_readme = { "R" },
     switch_docs = { "D" },
+    toggle_docs_fullscreen = { "f" },
+    open_docs_tab = { "<C-t>" },
+    open_docs_vsplit = { "<C-v>" },
+    open_docs_split = { "<C-s>" },
   },
 
   -- Behavior
@@ -310,8 +316,11 @@ local DEFAULT_USER_CONFIG = {
   plugin_manager = "not-selected",
   readme_cache_url = "https://store-nvim-readme.oleksandrp.com",
 
-  -- Logging
-  logging = "warn",
+  -- Logging: off by default (the help and the annotations say so); the
+  -- logger prints through vim.notify, and any warn-level chatter (offline
+  -- serves, a failed fetch retried in the background) reads as errors
+  -- nobody asked to see
+  logging = "off",
 
   -- List display settings
   repository_renderer = default_repository_renderer, -- Function to render repository data for list display
@@ -332,6 +341,31 @@ local DEFAULT_USER_CONFIG = {
 
   -- Telemetry (opt-out) — tracks plugin views and installs via store.nvim.telemetry service
   telemetry = true,
+
+  -- The cache (browser-style): everything you view lands on disk and
+  -- opens without the network. enabled = false turns the disk cache off
+  -- and goes back to requiring the network. update_interval is the
+  -- seconds a cached list/page stays trusted - no request at all inside
+  -- the window (0 = revalidate on every open). implicit_updates = false
+  -- stops the silent background refresh of stale lists: you revalidate
+  -- with <leader>r instead.
+  --
+  -- sections toggles the cache per kind of content, most on by default:
+  -- the plugin list, the install catalogue, readmes and docs. A section
+  -- switched off is fetched live every time; offline it shows "not
+  -- connected" in the preview instead of erroring, like any uncached
+  -- page.
+  cache = {
+    enabled = true,
+    update_interval = 1800,
+    implicit_updates = true,
+    sections = {
+      list = true,
+      install_catalogue = true,
+      readme = true,
+      docs = true,
+    },
+  },
 }
 
 ---Validate merged configuration against expected structure
@@ -340,6 +374,45 @@ local DEFAULT_USER_CONFIG = {
 local function validate_config(config)
   if not config then
     return nil
+  end
+
+  if config.cache ~= nil then
+    local err = validators.should_be_table(config.cache, "cache must be a table")
+    if err then
+      return err
+    end
+    if config.cache.enabled ~= nil then
+      err = validators.should_be_boolean(config.cache.enabled, "cache.enabled must be a boolean")
+      if err then
+        return err
+      end
+    end
+    if config.cache.update_interval ~= nil then
+      err = validators.should_be_number(config.cache.update_interval, "cache.update_interval must be a number")
+      if err then
+        return err
+      end
+    end
+    if config.cache.implicit_updates ~= nil then
+      err = validators.should_be_boolean(config.cache.implicit_updates, "cache.implicit_updates must be a boolean")
+      if err then
+        return err
+      end
+    end
+    if config.cache.sections ~= nil then
+      err = validators.should_be_table(config.cache.sections, "cache.sections must be a table")
+      if err then
+        return err
+      end
+      for _, key in ipairs({ "list", "install_catalogue", "readme", "docs" }) do
+        if config.cache.sections[key] ~= nil then
+          err = validators.should_be_boolean(config.cache.sections[key], "cache.sections." .. key .. " must be a boolean")
+          if err then
+            return err
+          end
+        end
+      end
+    end
   end
 
   if config.layout ~= nil then
@@ -652,6 +725,20 @@ end
 function M.get()
   if not plugin_config then
     M.setup({})
+  end
+  if not plugin_config then
+    -- setup failed on the defaults themselves (a broken environment, a
+    -- window that cannot be measured): rather than handing nil up -
+    -- where it lands in a cryptic `tbl_deep_extend: expected table, got
+    -- nil` traceback - fall back to the raw defaults so the store still
+    -- opens, and say what happened
+    plugin_config = vim.deepcopy(DEFAULT_USER_CONFIG)
+    vim.schedule(function()
+      vim.notify(
+        "[store.nvim] the configuration could not be computed; using defaults",
+        vim.log.levels.WARN
+      )
+    end)
   end
   return plugin_config
 end

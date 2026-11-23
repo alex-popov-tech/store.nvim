@@ -77,7 +77,13 @@ function M.on_installed_plugins(modal, installed_data, mode, installed_err, over
     local active_mode = mode or (modal.config.plugin_manager or "not-selected")
 
     if installed_err then
-      if modal.config.plugin_manager and modal.config.plugin_manager ~= "not-selected" then
+      -- offline is a state, not an error: the store runs on its cache and
+      -- says nothing (a "not connected" notice on every open is noise)
+      local offline = installed_err:find("not connected", 1, true)
+        or installed_err:find("network unreachable", 1, true)
+      if offline then
+        logger.debug("plugin manager detection offline: " .. installed_err)
+      elseif modal.config.plugin_manager and modal.config.plugin_manager ~= "not-selected" then
         local message = "Preferred plugin manager '"
           .. modal.config.plugin_manager
           .. "' is unavailable: "
@@ -88,9 +94,9 @@ function M.on_installed_plugins(modal, installed_data, mode, installed_err, over
           modal:close()
         end
         return
+      else
+        utils.tryNotify("[store.nvim] " .. installed_err .. "\nInstallation is not available", vim.log.levels.ERROR)
       end
-
-      utils.tryNotify("[store.nvim] " .. installed_err .. "\nInstallation is not available", vim.log.levels.ERROR)
       modal.state.installed_items = {}
       modal.state.total_installed_count = 0
       modal.state.plugin_manager_mode = "not-selected"
@@ -133,13 +139,23 @@ function M.on_installed_plugins(modal, installed_data, mode, installed_err, over
 
         database.fetch_install_catalogue(active_mode, function(catalogue, catalogue_err)
           if catalogue_err then
-            logger.error(
-              "Failed to load install catalogue for "
-                .. active_mode
-                .. ": "
-                .. catalogue_err
-                .. "\nInstallation is not available"
-            )
+            -- offline is a state, not an error: the install tab shows what
+            -- it can and the log says the rest, quietly
+            local offline = catalogue_err:find("not connected", 1, true)
+              or catalogue_err:find("network unreachable", 1, true)
+            if offline then
+              logger.debug(
+                "install catalogue not loaded (offline) for " .. active_mode .. ": " .. catalogue_err
+              )
+            else
+              logger.error(
+                "Failed to load install catalogue for "
+                  .. active_mode
+                  .. ": "
+                  .. catalogue_err
+                  .. "\nInstallation is not available"
+              )
+            end
             return
           end
 
@@ -210,8 +226,20 @@ function M.on_repo_selected(modal, repository)
 
   database.get_readme(repository, function(content, error)
     vim.schedule(function()
+      -- the cursor may have moved on while this was loading (a fast cycle,
+      -- a slow fetch): this answer is for a repository nobody is looking
+      -- at anymore, and rendering it would flip the preview back to
+      -- yesterday's entry - the "it keeps changing by itself" feel
+      if modal.state.is_closing or modal.state.current_repository ~= repository then
+        return
+      end
       if error then
-        local render_error = modal.preview:render({ state = "error", content = { error } })
+        -- offline with nothing cached is a state, not an error: the
+        -- preview says so, quietly, instead of dumping curl's complaint
+        local offline = error:find("not connected", 1, true)
+          or error:find("network unreachable", 1, true)
+        local content_lines = offline and { "", "  Not connected", "" } or { error }
+        local render_error = modal.preview:render({ state = "error", content = content_lines })
         if render_error then
           logger.error("Failed to render preview error state: " .. render_error)
         end

@@ -240,6 +240,17 @@ parse.request = function(opts)
   append(parse.auth(opts.auth))
   append(parse.http_version(opts.http_version))
   append(opts.raw)
+  -- the timeout is curl's, not just the sync-wait's: without --max-time an
+  -- async request (the only kind the store makes) runs until TCP itself
+  -- gives up - minutes on a half-dead network, one unbounded process per
+  -- URL, and the offline latch never arms because no request ever FAILS.
+  -- Bounded to half the timeout for the connect, the whole timeout for
+  -- the transfer.
+  if opts.timeout and type(opts.timeout) == "number" and opts.timeout > 0 then
+    local connect_s = math.max(1, math.floor(opts.timeout / 2000))
+    table.insert(result, { "--connect-timeout", tostring(connect_s) })
+    table.insert(result, { "--max-time", string.format("%.3f", opts.timeout / 1000) })
+  end
   if opts.output then
     table.insert(result, { "-o", opts.output })
   end
@@ -306,9 +317,22 @@ local request = function(specs)
           stderr = stderr,
           exit = code,
         })
-      else
-        error(message)
       end
+      -- no on_error handler: the failure comes back as the status-0
+      -- response below, quietly - a notify from inside a job callback is
+      -- exactly the per-request spam the store must not produce (and an
+      -- error() raised there would escape into the event loop and kill
+      -- plenary's output coroutine)
+      if opts.callback then
+        local output = {
+          status = 0,
+          headers = {},
+          body = "",
+          exit = code,
+        }
+        return opts.callback(output)
+      end
+      return
     end
     local output = parse.response(j:result(), opts.dump[2], code)
     if opts.callback then

@@ -14,12 +14,18 @@ local M = {}
 function M.fetch_plugins(callback)
   local url = config.get().data_source_url
   logger.info("Fetching from GitHub: " .. url)
-  curl.get(url, {
+  -- curl RAISES on connection failures (no internet, dead proxy); catch it
+  -- so the caller gets callback(nil, error) instead of a broken session
+  local ok, curl_err = pcall(curl.get, url, {
     headers = {
       ["Accept"] = "application/json",
       ["User-Agent"] = "store.nvim",
     },
     timeout = 10000,
+    on_error = function(e)
+      require("store.database.net").mark_offline(e.message)
+      callback(nil, "not connected")
+    end,
     callback = function(response)
       if response.status ~= 200 then
         callback(nil, "Failed to fetch data: HTTP " .. response.status .. " " .. response.body)
@@ -35,6 +41,9 @@ function M.fetch_plugins(callback)
       callback(data, nil, response.body)
     end,
   })
+  if not ok then
+    callback(nil, "network unreachable: " .. tostring(curl_err))
+  end
 end
 
 ---Get doc content for a specific doc file
@@ -45,8 +54,12 @@ function M.get_doc(repo, doc_path, callback)
   local plugin_url = db_utils.build_github_doc_url(repo.full_name, doc_path)
   logger.debug("Fetching doc: " .. repo.full_name .. " [" .. doc_path .. "]")
 
-  curl.get(plugin_url, {
+  local ok, curl_err = pcall(curl.get, plugin_url, {
     timeout = 10000,
+    on_error = function(e)
+      require("store.database.net").mark_offline(e.message)
+      callback(nil, "not connected")
+    end,
     callback = function(response)
       local success = response.status >= 200 and response.status < 300
       if not success then
@@ -63,6 +76,9 @@ function M.get_doc(repo, doc_path, callback)
       callback(lines, nil)
     end,
   })
+  if not ok then
+    callback(nil, "network unreachable: " .. tostring(curl_err))
+  end
 end
 
 return M
