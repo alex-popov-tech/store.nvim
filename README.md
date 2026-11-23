@@ -10,7 +10,7 @@ A Neovim plugin for browsing and installing Neovim plugins through an intuitive 
 - 💅 **Live README Preview**: Real-time markdown rendering via markview.nvim with server-side pre-processing and CDN caching for instant loading
 - 🤓 **Smart Filtering and Sorting**: Filter/sort plugins by `name`, `tags`, `author`, `activity`, `rising stars`, `downloads`, `views` and more
 - 🖼️ **Image Preview**: Optional [image.nvim](https://github.com/3rd/image.nvim) integration renders inline images from plugin READMEs directly in your terminal
-💾 **Offline Cache**: everything you view is kept on disk and served without the network — browsers-style freshness with ETag revalidation — so the store opens on a train, and a dead proxy shows the last known lists instead of an error
+- 💾 **Offline Cache**: everything you view is kept on disk and served without the network — browsers-style freshness with ETag revalidation — so the store opens on a train, and a dead proxy shows the last known lists instead of an error
 
 ## Installation
 
